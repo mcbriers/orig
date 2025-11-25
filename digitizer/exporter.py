@@ -61,6 +61,12 @@ def export_project(project: Dict[str, Any], export_dir: str, project_name: str):
         f.write("-- SQL Insert Script for SeasPathDB\n")
         f.write("-- Generated from Digitizer Export\n\n")
 
+        # Clear tables first (Curves, Lines, Points)
+        f.write("-- Clear existing data (order: Curves, Lines, Points)\n")
+        f.write("DELETE FROM SeasPathDB.dbo.Visualization_Curve;\n")
+        f.write("DELETE FROM SeasPathDB.dbo.Visualization_Edge;\n")
+        f.write("DELETE FROM SeasPathDB.dbo.Visualization_Coordinate;\n\n")
+
         # Points
         f.write("SET IDENTITY_INSERT SeasPathDB.dbo.Visualization_Coordinate ON;\n")
         for p in points:

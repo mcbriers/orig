@@ -189,6 +189,16 @@ class CurvesMixin:
                 self.refresh_editor_lists()
             except Exception:
                 pass
+            try:
+                if hasattr(self, 'update_curves_label'):
+                    self.update_curves_label()
+            except Exception:
+                pass
+            try:
+                if hasattr(self, 'update_lines_label'):
+                    self.update_lines_label()
+            except Exception:
+                pass
             self.current_curve_points.clear()
             self.canvas.delete("temp_curve_point")
             # Update 3D view after creating curve
