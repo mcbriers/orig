@@ -1,0 +1,1 @@
+LineID,StartPointID,EndPointID,StartPointZ,EndPointZ
