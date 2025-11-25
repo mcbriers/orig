@@ -29,24 +29,23 @@ class DeletionMixin:
         else:
             self.update_status("No item close enough to delete")
 
-    def find_closest_item(self, pdf_x, pdf_y):
-        # Convert pixel tolerance (5 px) to PDF units for comparison
+    def find_items_near(self, pdf_x, pdf_y):
+        """Return a list of nearby candidates (kind, item, dist) without prompting.
+        Same proximity rules as find_closest_item.
+        """
         try:
             pixel_tolerance = 5
             pdf_tolerance_sq = (pixel_tolerance / float(self.zoom_level)) ** 2
         except Exception:
-            pdf_tolerance_sq = 25.0  # fallback
+            pdf_tolerance_sq = 25.0
 
         candidates = []
-
-        # Find nearby points
         for point in self.user_points:
             if 'pdf_x' in point and 'pdf_y' in point:
                 dist = (point['pdf_x'] - pdf_x) ** 2 + (point['pdf_y'] - pdf_y) ** 2
                 if dist <= pdf_tolerance_sq:
                     candidates.append(('point', point, dist))
 
-        # Find nearby lines (distance to line segment)
         for line in self.lines:
             try:
                 start = next(p for p in self.user_points if p['id'] == line['start_id'])
@@ -57,7 +56,6 @@ class DeletionMixin:
             if dist <= pdf_tolerance_sq:
                 candidates.append(('line', line, dist))
 
-        # Find nearby curve arc points
         for curve in self.curves:
             for arc_point in curve.get('arc_points_pdf', []):
                 try:
@@ -69,6 +67,10 @@ class DeletionMixin:
                 if dist <= pdf_tolerance_sq:
                     candidates.append(('curve_arc', curve, dist))
 
+        return candidates
+
+    def find_closest_item(self, pdf_x, pdf_y):
+        candidates = self.find_items_near(pdf_x, pdf_y)
         if not candidates:
             return None
 

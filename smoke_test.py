@@ -16,7 +16,7 @@ class TestApp(CurvesMixin, DeletionMixin):
         self.point_markers = {}
         self.canvas = CanvasStub()
         self.deletion_log = []
-        self.point_id_counter = 4
+        # legacy counter removed; tests rely on explicit point ids in user_points
 
     def update_3d_plot(self):
         # noop for smoke test

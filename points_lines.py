@@ -18,9 +18,10 @@ class PointsLinesMixin:
             'pdf_y': pdf_y,
         }
         self.user_points.append(point)
-        size = 5
+        size = getattr(self, 'point_marker_size', 5)
+        clr = getattr(self, 'point_color_2d', 'blue')
         marker_id = self.canvas.create_oval(canvas_x - size, canvas_y - size, canvas_x + size, canvas_y + size,
-                                            outline="blue", fill="blue", tags="user_point", width=2)
+                            outline=clr, fill=clr, tags="user_point", width=2)
         self.point_markers[point['id']] = marker_id
         self.label_all_elements()
         # Update 3D view if available
@@ -79,7 +80,10 @@ class PointsLinesMixin:
             y1 = start_point['pdf_y'] * self.zoom_level
             x2 = end_point['pdf_x'] * self.zoom_level
             y2 = end_point['pdf_y'] * self.zoom_level
-            line_id = self.canvas.create_line(x1, y1, x2, y2, fill="orange", width=4, tags="user_line")
+            # Use configured display params for new lines
+            lw = getattr(self, 'line_width_2d', 4)
+            lclr = getattr(self, 'line_color_2d', 'orange')
+            line_id = self.canvas.create_line(x1, y1, x2, y2, fill=lclr, width=lw, tags="user_line")
             # Allocate a consistent line id via centralized helper
             line_data = {
                 'id': self.next_line_id(),
@@ -94,7 +98,11 @@ class PointsLinesMixin:
             mid_y = (y1 + y2) / 2
             text_offset = 15
             text_y = mid_y - text_offset if y1 < y2 else mid_y + text_offset
-            text_id = self.canvas.create_text(mid_x, text_y, text=str(line_data['id']), fill="orange", tags="line_label", font=("Helvetica", 16))
+            lbl_size = getattr(self, 'label_font_size', 12)
+            try:
+                text_id = self.canvas.create_text(mid_x, text_y, text=str(line_data['id']), fill=lclr, tags="line_label", font=("Helvetica", lbl_size))
+            except Exception:
+                text_id = self.canvas.create_text(mid_x, text_y, text=str(line_data['id']), fill=lclr, tags="line_label")
             line_data['text_id'] = text_id
             self.update_status(f"Line {line_data['id']} created between points {start_id} and {end_id}")
             self.current_line_points.clear()
@@ -104,24 +112,73 @@ class PointsLinesMixin:
                 self.update_3d_plot()
             except Exception:
                 pass
+            try:
+                # update line counter in UI if present
+                if hasattr(self, 'update_lines_label'):
+                    try:
+                        self.update_lines_label()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
     def show_point_selection_dialog(self, candidates):
         import tkinter as tk
-        from tkinter import simpledialog
+        from tkinter import Toplevel, Listbox, Button, Label, Scrollbar
 
-        root = tk.Tk()
-        root.withdraw()  # Hide main window
-        options = [f"ID: {p['id']}, Z: {p['z']}" for p in candidates]
-        selected = simpledialog.askinteger(
-            "Select Point",
-            "Choose a point index (0..%d):\n" % (len(candidates) - 1) + "\n".join(options),
-            parent=root,
-            minvalue=0,
-            maxvalue=len(candidates) - 1
-        )
-        root.destroy()
-        if selected is not None:
-            return candidates[selected]
+        dlg = Toplevel(self.master)
+        dlg.transient(self.master)
+        dlg.grab_set()
+        dlg.title('Select Point')
+
+        Label(dlg, text='Select a point (click or double-click)').grid(row=0, column=0, columnspan=2, padx=8, pady=(8,4))
+        # listbox with scrollbar
+        sb = Scrollbar(dlg)
+        lb = Listbox(dlg, yscrollcommand=sb.set, selectmode='browse', width=50)
+        sb.config(command=lb.yview)
+        sb.grid(row=1, column=1, sticky='ns', padx=(0,8), pady=4)
+        lb.grid(row=1, column=0, sticky='nsew', padx=(8,0), pady=4)
+
+        options = [f"ID: {p['id']}, Z: {p.get('z', 0)}" for p in candidates]
+        for opt in options:
+            lb.insert('end', opt)
+
+        result = {'idx': None}
+
+        def on_ok():
+            sel = lb.curselection()
+            if not sel:
+                return
+            result['idx'] = int(sel[0])
+            dlg.destroy()
+
+        def on_cancel():
+            dlg.destroy()
+
+        def on_double(event=None):
+            on_ok()
+
+        btn_frame = tk.Frame(dlg)
+        btn_frame.grid(row=2, column=0, columnspan=2, pady=(6,8))
+        Button_ok = Button(btn_frame, text='OK', command=on_ok)
+        Button_ok.pack(side='left', padx=6)
+        Button_cancel = Button(btn_frame, text='Cancel', command=on_cancel)
+        Button_cancel.pack(side='left')
+
+        lb.bind('<Double-1>', on_double)
+
+        # center dialog
+        dlg.update_idletasks()
+        try:
+            x = self.master.winfo_rootx() + (self.master.winfo_width() - dlg.winfo_width()) // 2
+            y = self.master.winfo_rooty() + (self.master.winfo_height() - dlg.winfo_height()) // 2
+            dlg.geometry(f'+{x}+{y}')
+        except Exception:
+            pass
+
+        self.master.wait_window(dlg)
+        if result['idx'] is not None:
+            return candidates[result['idx']]
         return None
 
 
@@ -162,7 +219,9 @@ class PointsLinesMixin:
             y1 = start_point['pdf_y'] * self.zoom_level
             x2 = end_point['pdf_x'] * self.zoom_level
             y2 = end_point['pdf_y'] * self.zoom_level
-            line_id = self.canvas.create_line(x1, y1, x2, y2, fill="orange", width=4, tags="user_line")
+            lw = getattr(self, 'line_width_2d', 4)
+            lclr = getattr(self, 'line_color_2d', 'orange')
+            line_id = self.canvas.create_line(x1, y1, x2, y2, fill=lclr, width=lw, tags="user_line")
             line_data = {
                 'id': self.next_line_id(),
                 'start_id': start_id,
@@ -174,7 +233,11 @@ class PointsLinesMixin:
             mid_y = (y1 + y2) / 2
             text_offset = 15
             text_y = mid_y - text_offset if y1 < y2 else mid_y + text_offset
-            text_id = self.canvas.create_text(mid_x, text_y, text=str(line_data['id']), fill="orange", tags="line_label",font=("Helvetica", 16))
+            lbl_size = getattr(self, 'label_font_size', 12)
+            try:
+                text_id = self.canvas.create_text(mid_x, text_y, text=str(line_data['id']), fill=lclr, tags="line_label", font=("Helvetica", lbl_size))
+            except Exception:
+                text_id = self.canvas.create_text(mid_x, text_y, text=str(line_data['id']), fill=lclr, tags="line_label")
             line_data['text_id'] = text_id
             self.update_status(f"Line {line_data['id']} created between points {start_id} and {end_id}")
             self.current_line_points.clear()
@@ -186,6 +249,16 @@ class PointsLinesMixin:
         self.lines.clear()
         self.curves.clear()
         self.points_label.config(text="Points: 0")
+        try:
+            if hasattr(self, 'update_lines_label'):
+                self.update_lines_label()
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'update_curves_label'):
+                self.update_curves_label()
+        except Exception:
+            pass
         if self.pdf_doc:
             self.display_page()
         self.update_status("Points cleared")
@@ -215,3 +288,17 @@ class PointsLinesMixin:
 
     def update_points_label(self):
         self.points_label.config(text=f"Points: {len(self.user_points)}")
+
+    def update_lines_label(self):
+        try:
+            if hasattr(self, 'lines_label') and self.lines_label is not None:
+                self.lines_label.config(text=f"Lines: {len(self.lines)}")
+        except Exception:
+            pass
+
+    def update_curves_label(self):
+        try:
+            if hasattr(self, 'curves_label') and self.curves_label is not None:
+                self.curves_label.config(text=f"Curves: {len(self.curves)}")
+        except Exception:
+            pass

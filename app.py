@@ -49,6 +49,11 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         self.zoom_level = 1.0
         self.photo_image = None
         self.canvas_image = None
+        # caching and zoom debounce helpers
+        self._zoom_render_job = None
+        self._pending_zoom_level = None
+        self._pending_zoom_pdf_coords = None
+        self._last_rendered_pil = None
 
         self.reference_points_pdf = []
         self.reference_points_real = []
@@ -70,7 +75,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
 
         self.elevation_var = tk.StringVar(value="0.0")
         self.mode_var = tk.StringVar(value="calibration")
-        self.point_id_counter = 1
+        # legacy counters removed; IDs are allocated deterministically via next_* helpers
         # Configurable number of interior points for curves (default 4 -> total 6 points per curve)
         try:
             self.curve_interior_points = int(self.config['General'].get('curve_interior_points', '4'))
@@ -87,6 +92,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         self.deletion_log = []
 
         self.point_markers = {}
+        self.point_labels = {}
         self.calibration_markers = {}
         self.zoom_entry = None
         self.points_label = None
@@ -97,6 +103,10 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         self.hscroll = None
 
         self.selected_item = None
+        # sort state for treeviews: map (tree, column) -> ascending(bool)
+        self._tv_sort_state = {}
+        # store base heading texts per tree so we can add visual sort indicators
+        self._tv_heading_texts = {}
 
         self.build_ui()
 
@@ -105,17 +115,16 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         try:
             if hasattr(self, 'allocator') and self.allocator is not None:
                 nid = self.allocator.next_point_id()
-                # keep legacy counter at least in sync
-                try:
-                    self.point_id_counter = max(self.point_id_counter, int(getattr(self.allocator, 'point_counter', self.point_id_counter)))
-                except Exception:
-                    pass
                 return nid
         except Exception:
             pass
-        nid = self.point_id_counter
-        self.point_id_counter += 1
-        return nid
+        # Deterministic fallback: use max existing point id + 1
+        try:
+            max_id = max((p.get('id', 0) for p in self.user_points), default=0)
+            return max_id + 1
+        except Exception:
+            # final fallback
+            return 1
 
     def next_line_id(self):
         try:
@@ -123,28 +132,34 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 lid = self.allocator.next_line_id()
                 try:
                     # if allocator tracks line counter, keep in sync
-                    self.line_id_counter = max(getattr(self, 'line_id_counter', 0), int(getattr(self.allocator, 'line_counter', getattr(self, 'line_id_counter', 0))))
+                    pass
                 except Exception:
                     pass
                 return lid
         except Exception:
             pass
-        # fallback: use len(self.lines)+1 for historical behavior
-        lid = len(self.lines) + 1
-        return lid
+        try:
+            max_id = max((l.get('id', 0) for l in self.lines), default=0)
+            return max_id + 1
+        except Exception:
+            return 1
 
     def next_curve_id(self):
         try:
             if hasattr(self, 'allocator') and self.allocator is not None:
                 cid = self.allocator.next_curve_id()
                 try:
-                    self.curve_id_counter = max(getattr(self, 'curve_id_counter', 0), int(getattr(self.allocator, 'curve_counter', getattr(self, 'curve_id_counter', 0))))
+                    pass
                 except Exception:
                     pass
                 return cid
         except Exception:
             pass
-        return len(self.curves) + 1
+        try:
+            max_id = max((c.get('id', 0) for c in self.curves), default=0)
+            return max_id + 1
+        except Exception:
+            return 1
 
     def build_ui(self):
         menu_bar = tk.Menu(self.master)
@@ -165,6 +180,11 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         edit_menu.add_command(label="Clear Points", command=self.clear_points)
         edit_menu.add_command(label="Clear Calibration", command=self.clear_calibration)
         menu_bar.add_cascade(label="Edit", menu=edit_menu)
+
+        # View menu: options window for display settings
+        view_menu = tk.Menu(menu_bar, tearoff=0)
+        view_menu.add_command(label="Options...", command=self.open_display_options)
+        menu_bar.add_cascade(label="View", menu=view_menu)
 
         main_frame = tk.Frame(self.master)
         main_frame.pack(fill="both", expand=True)
@@ -243,6 +263,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         tk.Radiobutton(mode_frame, text="Curves", variable=self.mode_var, value="curves").pack(anchor="w", padx=10)
         tk.Radiobutton(mode_frame, text="Duplication", variable=self.mode_var, value="duplication").pack(anchor="w", padx=10)
         tk.Radiobutton(mode_frame, text="Deletion", variable=self.mode_var, value="deletion").pack(anchor="w", padx=10)
+        tk.Radiobutton(mode_frame, text="Identify", variable=self.mode_var, value="identify").pack(anchor="w", padx=10)
 
         tk.Label(point_frame, text="Level Name:").pack(pady=(10, 0))
         tk.Entry(point_frame, width=20, textvariable=self.elevation_var).pack(padx=5, pady=2)
@@ -250,10 +271,44 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         self.points_label = tk.Label(point_frame, text="Points: 0", bg="white", relief="sunken")
         self.points_label.pack(fill='x', padx=2, pady=2)
 
-        tk.Button(point_frame, text="Save Project", command=self.save_project, bg="#4CAF50", fg="white").pack(fill='x', padx=2, pady=2)
+        # Line / Curve counters (kept in the control panel)
+        self.lines_label = tk.Label(point_frame, text="Lines: 0", bg="white", relief="sunken")
+        self.lines_label.pack(fill='x', padx=2, pady=2)
+        self.curves_label = tk.Label(point_frame, text="Curves: 0", bg="white", relief="sunken")
+        self.curves_label.pack(fill='x', padx=2, pady=2)
+
+        # Keep Clear Points available here; save/export remains in the File menu.
         tk.Button(point_frame, text="Clear Points", command=self.clear_points).pack(fill='x', padx=2, pady=2)
-        tk.Button(point_frame, text="Hide All", command=self.hide_all_elements, bg="#FF9800", fg="white").pack(fill='x', padx=2, pady=2)
-        tk.Button(point_frame, text="Show All", command=self.show_all_elements, bg="#4CAF50", fg="white").pack(fill='x', padx=2, pady=2)
+
+        # NOTE: Display controls moved to a separate Options window (View -> Options...)
+        # Default display params (2D) are still initialized here so other code can rely on them.
+        from tkinter import colorchooser
+        self.point_color_2d = 'blue'
+        self.line_color_2d = 'orange'
+        self.curve_color_2d = 'purple'
+        self.point_marker_size = 5
+        self.line_width_2d = 4
+        self.curve_width_2d = 2
+        self.label_font_size = 12
+
+        # Display-related Tk variables/widgets are created in the Options window.
+        # Initialize variables here so other code can reference them safely.
+        try:
+            self.point_size_var = tk.IntVar(value=self.point_marker_size)
+            self.line_width_var = tk.IntVar(value=self.line_width_2d)
+            self.font_size_var = tk.IntVar(value=self.label_font_size)
+        except Exception:
+            self.point_size_var = None
+            self.line_width_var = None
+            self.font_size_var = None
+
+        # Swatch widgets will be created when the Options window opens.
+        self.point_color_swatch = None
+        self.line_color_swatch = None
+        self.curve_color_swatch = None
+
+        # Display controls have been moved to a separate Options window (View -> Options...).
+        # Use `open_display_options()` to show and edit colors/sizes when needed.
 
         status_frame = tk.Frame(self.master, bg="white", relief="sunken", bd=1)
         status_frame.pack(fill="x", side="bottom")
@@ -339,120 +394,248 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             pass
         self._3d_initialized = True
 
+    def _do_full_zoom_render(self):
+        """Perform a full high-quality PDF render for the pending zoom level and re-center view."""
+        try:
+            if getattr(self, '_zoom_render_job', None):
+                try:
+                    self.master.after_cancel(self._zoom_render_job)
+                except Exception:
+                    pass
+                self._zoom_render_job = None
+
+            if self._pending_zoom_level is None:
+                return
+
+            # preserve desired pdf coords to center on
+            coords = self._pending_zoom_pdf_coords or (None, None)
+            x_pdf, y_pdf = coords
+
+            # apply final zoom level and perform full render
+            try:
+                self.zoom_level = float(self._pending_zoom_level)
+            except Exception:
+                pass
+            # trigger the normal full rendering path
+            self.display_page()
+
+            # if we have a center point, recenter the canvas so that the same PDF point
+            # remains under the original cursor location
+            try:
+                if x_pdf is not None and y_pdf is not None and self.photo_image is not None:
+                    img_width = self.photo_image.width()
+                    img_height = self.photo_image.height()
+                    x_scroll_new = x_pdf * self.zoom_level
+                    y_scroll_new = y_pdf * self.zoom_level
+                    frac_x = (x_scroll_new - (self.canvas.winfo_width() // 2)) / img_width if img_width > 0 else 0
+                    frac_y = (y_scroll_new - (self.canvas.winfo_height() // 2)) / img_height if img_height > 0 else 0
+                    frac_x = max(0, min(1, frac_x))
+                    frac_y = max(0, min(1, frac_y))
+                    try:
+                        self.canvas.xview_moveto(frac_x)
+                        self.canvas.yview_moveto(frac_y)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            # clear pending state
+            self._pending_zoom_level = None
+            self._pending_zoom_pdf_coords = None
+        except Exception:
+            return
+
     # --- Editor tab implementation ---
     def _build_editor_tab(self, parent):
-        # Left: lists, Right: editor details
-        left = tk.Frame(parent)
-        left.pack(side='left', fill='y', padx=4, pady=4)
-        right = tk.Frame(parent)
-        right.pack(side='left', fill='both', expand=True, padx=4, pady=4)
+        # Editor area: three treeviews side-by-side for Points / Lines / Curves
+        editor_area = tk.Frame(parent)
+        editor_area.pack(fill='both', expand=True, padx=4, pady=4)
 
-        # Points treeview (replaces listbox + hide column)
-        points_frame = tk.Frame(left)
-        points_frame.pack(anchor='nw', pady=(0,6))
+        # Points treeview (left)
+        points_frame = tk.Frame(editor_area)
+        points_frame.grid(row=0, column=0, sticky='nsew', padx=(0,4))
+        editor_area.grid_columnconfigure(0, weight=1)
+        # allow the points_frame to expand its first column
+        points_frame.grid_columnconfigure(0, weight=1)
         tk.Label(points_frame, text='Points').grid(row=0, column=0, sticky='w')
-        self.points_tv = ttk.Treeview(points_frame, columns=('id', 'coords', 'z', 'hidden'), show='headings', height=10)
-        self.points_tv.heading('id', text='ID')
-        self.points_tv.heading('coords', text='Coords')
-        self.points_tv.heading('z', text='Z')
-        self.points_tv.heading('hidden', text='Hidden')
+        # Points treeview: include a 'Refs' column showing how many entities reference each point
+        self.points_tv = ttk.Treeview(points_frame, columns=('id', 'coords', 'refs', 'z', 'hidden'), show='headings', height=24, selectmode='extended')
+        self.points_tv.heading('id', text='ID', command=lambda c='id': self._treeview_sort(self.points_tv, c))
+        self.points_tv.heading('coords', text='Coords', command=lambda c='coords': self._treeview_sort(self.points_tv, c))
+        self.points_tv.heading('refs', text='Refs', command=lambda c='refs': self._treeview_sort(self.points_tv, c))
+        self.points_tv.heading('z', text='Z', command=lambda c='z': self._treeview_sort(self.points_tv, c))
+        self.points_tv.heading('hidden', text='Hidden', command=lambda c='hidden': self._treeview_sort(self.points_tv, c))
         self.points_tv.column('id', width=40, anchor='center')
-        self.points_tv.column('coords', width=120)
+        self.points_tv.column('coords', width=100)
+        self.points_tv.column('refs', width=60, anchor='center')
         self.points_tv.column('z', width=50, anchor='center')
         self.points_tv.column('hidden', width=50, anchor='center')
-        self.points_tv.grid(row=1, column=0, sticky='ns')
+        # add a vertical scrollbar so users see when more rows are available
+        pts_v = ttk.Scrollbar(points_frame, orient='vertical', command=self.points_tv.yview)
+        self.points_tv.configure(yscrollcommand=pts_v.set)
+        self.points_tv.grid(row=1, column=0, sticky='nsew')
+        pts_v.grid(row=1, column=1, sticky='ns')
+        # visual tag for newly created/duplicated rows
+        try:
+            self.points_tv.tag_configure('new', background='#fff2a8')
+        except Exception:
+            pass
+        points_frame.grid_rowconfigure(1, weight=1, minsize=240)
         self.points_tv.bind('<<TreeviewSelect>>', self._on_point_select)
+        self.points_tv.bind('<Double-1>', self._on_treeview_double_click)
 
-        # Lines treeview
-        lines_frame = tk.Frame(left)
-        lines_frame.pack(anchor='nw', pady=(8,6))
+        # Lines treeview (center)
+        lines_frame = tk.Frame(editor_area)
+        lines_frame.grid(row=0, column=1, sticky='nsew', padx=4)
+        editor_area.grid_columnconfigure(1, weight=1)
+        lines_frame.grid_columnconfigure(0, weight=1)
         tk.Label(lines_frame, text='Lines').grid(row=0, column=0, sticky='w')
-        self.lines_tv = ttk.Treeview(lines_frame, columns=('id', 'ends', 'hidden'), show='headings', height=8)
-        self.lines_tv.heading('id', text='ID')
-        self.lines_tv.heading('ends', text='Start->End')
-        self.lines_tv.heading('hidden', text='Hidden')
+        self.lines_tv = ttk.Treeview(lines_frame, columns=('id', 'from', 'to', 'z', 'hidden'), show='headings', height=24, selectmode='extended')
+        self.lines_tv.heading('id', text='ID', command=lambda c='id': self._treeview_sort(self.lines_tv, c))
+        self.lines_tv.heading('from', text='From', command=lambda c='from': self._treeview_sort(self.lines_tv, c))
+        self.lines_tv.heading('to', text='To', command=lambda c='to': self._treeview_sort(self.lines_tv, c))
+        self.lines_tv.heading('z', text='Z', command=lambda c='z': self._treeview_sort(self.lines_tv, c))
+        self.lines_tv.heading('hidden', text='Hidden', command=lambda c='hidden': self._treeview_sort(self.lines_tv, c))
         self.lines_tv.column('id', width=40, anchor='center')
-        self.lines_tv.column('ends', width=120)
+        self.lines_tv.column('from', width=80, anchor='center')
+        self.lines_tv.column('to', width=80, anchor='center')
+        self.lines_tv.column('z', width=60, anchor='center')
         self.lines_tv.column('hidden', width=50, anchor='center')
-        self.lines_tv.grid(row=1, column=0, sticky='ns')
+        # add vertical scrollbar for lines treeview
+        lines_v = ttk.Scrollbar(lines_frame, orient='vertical', command=self.lines_tv.yview)
+        self.lines_tv.configure(yscrollcommand=lines_v.set)
+        self.lines_tv.grid(row=1, column=0, sticky='nsew')
+        lines_v.grid(row=1, column=1, sticky='ns')
+        lines_frame.grid_rowconfigure(1, weight=1, minsize=240)
         self.lines_tv.bind('<<TreeviewSelect>>', self._on_line_select)
+        # reuse generic double-click handler which now understands 'from'/'to' keys
+        self.lines_tv.bind('<Double-1>', self._on_treeview_double_click)
 
-        # Curves treeview
-        curves_frame = tk.Frame(left)
-        curves_frame.pack(anchor='nw', pady=(8,6))
+        # Curves treeview (right)
+        curves_frame = tk.Frame(editor_area)
+        curves_frame.grid(row=0, column=2, sticky='nsew', padx=(4,0))
+        editor_area.grid_columnconfigure(2, weight=1)
+        curves_frame.grid_columnconfigure(0, weight=1)
         tk.Label(curves_frame, text='Curves').grid(row=0, column=0, sticky='w')
-        self.curves_tv = ttk.Treeview(curves_frame, columns=('id', 'pts', 'z', 'hidden'), show='headings', height=8)
-        self.curves_tv.heading('id', text='ID')
-        self.curves_tv.heading('pts', text='Points')
-        self.curves_tv.heading('z', text='Z')
-        self.curves_tv.heading('hidden', text='Hidden')
+        self.curves_tv = ttk.Treeview(curves_frame, columns=('id', 'pts', 'z', 'hidden'), show='headings', height=24, selectmode='extended')
+        self.curves_tv.heading('id', text='ID', command=lambda c='id': self._treeview_sort(self.curves_tv, c))
+        self.curves_tv.heading('pts', text='Points', command=lambda c='pts': self._treeview_sort(self.curves_tv, c))
+        self.curves_tv.heading('z', text='Z', command=lambda c='z': self._treeview_sort(self.curves_tv, c))
+        self.curves_tv.heading('hidden', text='Hidden', command=lambda c='hidden': self._treeview_sort(self.curves_tv, c))
         self.curves_tv.column('id', width=40, anchor='center')
         self.curves_tv.column('pts', width=80, anchor='center')
         self.curves_tv.column('z', width=50, anchor='center')
         self.curves_tv.column('hidden', width=50, anchor='center')
-        self.curves_tv.grid(row=1, column=0, sticky='ns')
+        # add vertical scrollbar for curves treeview
+        cur_v = ttk.Scrollbar(curves_frame, orient='vertical', command=self.curves_tv.yview)
+        self.curves_tv.configure(yscrollcommand=cur_v.set)
+        self.curves_tv.grid(row=1, column=0, sticky='nsew')
+        cur_v.grid(row=1, column=1, sticky='ns')
+        curves_frame.grid_rowconfigure(1, weight=1, minsize=240)
         self.curves_tv.bind('<<TreeviewSelect>>', self._on_curve_select)
+        self.curves_tv.bind('<Double-1>', self._on_treeview_double_click)
+        # RFID treeview (right-most)
+        rfid_frame = tk.Frame(editor_area)
+        rfid_frame.grid(row=0, column=3, sticky='nsew', padx=(4,0))
+        editor_area.grid_columnconfigure(3, weight=1)
+        rfid_frame.grid_columnconfigure(0, weight=1)
+        tk.Label(rfid_frame, text='RFID').grid(row=0, column=0, sticky='w')
+        # columns: Vertex, TransponderID, Line ID, length
+        self.rfid_tv = ttk.Treeview(rfid_frame, columns=('vertex', 'transponder', 'line', 'length'), show='headings', height=24, selectmode='extended')
+        self.rfid_tv.heading('vertex', text='Vertex', command=lambda c='vertex': self._treeview_sort(self.rfid_tv, c))
+        self.rfid_tv.heading('transponder', text='TransponderID', command=lambda c='transponder': self._treeview_sort(self.rfid_tv, c))
+        self.rfid_tv.heading('line', text='Line ID', command=lambda c='line': self._treeview_sort(self.rfid_tv, c))
+        self.rfid_tv.heading('length', text='Length', command=lambda c='length': self._treeview_sort(self.rfid_tv, c))
+        self.rfid_tv.column('vertex', width=60, anchor='center')
+        self.rfid_tv.column('transponder', width=140)
+        self.rfid_tv.column('line', width=60, anchor='center')
+        self.rfid_tv.column('length', width=80, anchor='e')
+        # add vertical scrollbar for rfid treeview
+        rfid_v = ttk.Scrollbar(rfid_frame, orient='vertical', command=self.rfid_tv.yview)
+        self.rfid_tv.configure(yscrollcommand=rfid_v.set)
+        self.rfid_tv.grid(row=1, column=0, sticky='nsew')
+        rfid_v.grid(row=1, column=1, sticky='ns')
+        rfid_frame.grid_rowconfigure(1, weight=1, minsize=240)
+        self.rfid_tv.bind('<<TreeviewSelect>>', lambda e: None)
+        self.rfid_tv.bind('<Double-1>', self._on_treeview_double_click)
+        # Editor context menu for hide/show
+        self.editor_menu = tk.Menu(parent, tearoff=0)
+        self.editor_menu.add_command(label='Toggle Hide/Show', command=self.editor_toggle_hide_selected)
+        self.editor_menu.add_command(label='Duplicate Point...', command=self.editor_duplicate_point)
+        self.editor_menu.add_command(label='Insert Line...', command=self.editor_insert_line)
+        self.editor_menu.add_separator()
+        self.editor_menu.add_command(label='Reassign References...', command=self.editor_reassign_references)
+        # Bind right-click to show context menu and select the clicked row
+        self.points_tv.bind('<Button-3>', self._show_editor_menu)
+        self.lines_tv.bind('<Button-3>', self._show_editor_menu)
+        self.curves_tv.bind('<Button-3>', self._show_editor_menu)
+        self.rfid_tv.bind('<Button-3>', self._show_editor_menu)
 
-        # Right: detail editor
-        dframe = tk.LabelFrame(right, text='Edit Entity')
-        dframe.pack(fill='both', expand=True)
+        # Controls below treeviews: Delete / Hide/Show
+        control_row = tk.Frame(parent)
+        control_row.pack(fill='x', padx=4, pady=(2,6))
+        tk.Button(control_row, text='Delete Selected', command=self.editor_delete_selected).pack(side='left', padx=6)
+        tk.Button(control_row, text='Hide/Show Selected', command=self.editor_toggle_hide_selected).pack(side='left')
 
-        # Point edit fields
-        tk.Label(dframe, text='Point ID:').grid(row=0, column=0, sticky='e')
-        self.point_id_var = tk.StringVar()
-        tk.Entry(dframe, textvariable=self.point_id_var, state='disabled').grid(row=0, column=1, sticky='w')
+        # Editor selection/edit state variables and hidden widgets
+        try:
+            self.point_id_var = tk.StringVar()
+            self.point_realx_var = tk.StringVar()
+            self.point_realy_var = tk.StringVar()
+            self.point_z_var = tk.StringVar()
+            self.point_hide_var = tk.BooleanVar(value=False)
 
-        tk.Label(dframe, text='Real X:').grid(row=1, column=0, sticky='e')
-        self.point_realx_var = tk.StringVar()
-        tk.Entry(dframe, textvariable=self.point_realx_var).grid(row=1, column=1, sticky='w')
+            self.line_id_var = tk.StringVar()
+            # create combobox widgets (not packed) to back selection state; values set in refresh
+            self.line_start_cb = ttk.Combobox(parent, values=[], state='readonly', width=8)
+            self.line_end_cb = ttk.Combobox(parent, values=[], state='readonly', width=8)
+            self.line_hide_var = tk.BooleanVar(value=False)
 
-        tk.Label(dframe, text='Real Y:').grid(row=2, column=0, sticky='e')
-        self.point_realy_var = tk.StringVar()
-        tk.Entry(dframe, textvariable=self.point_realy_var).grid(row=2, column=1, sticky='w')
-
-        tk.Label(dframe, text='Z:').grid(row=3, column=0, sticky='e')
-        self.point_z_var = tk.StringVar()
-        tk.Entry(dframe, textvariable=self.point_z_var).grid(row=3, column=1, sticky='w')
-        # Hide in 3D checkbox for point
-        self.point_hide_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(dframe, text='Hide in 3D', variable=self.point_hide_var).grid(row=4, column=0, columnspan=2, sticky='w')
-
-        tk.Button(dframe, text='Apply Point Edit', command=self.apply_point_edit).grid(row=5, column=0, columnspan=2, pady=6)
-        tk.Button(dframe, text='Delete Selected', command=self.editor_delete_selected).grid(row=5, column=0, columnspan=2, pady=6)
-
-        # Line editor controls below
-        lframe = tk.LabelFrame(right, text='Line Editor')
-        lframe.pack(fill='x', pady=6)
-        tk.Label(lframe, text='Line ID:').grid(row=0, column=0, sticky='e')
-        self.line_id_var = tk.StringVar()
-        tk.Entry(lframe, textvariable=self.line_id_var, state='disabled').grid(row=0, column=1, sticky='w')
-        tk.Label(lframe, text='Start Point ID:').grid(row=1, column=0, sticky='e')
-        self.line_start_cb = ttk.Combobox(lframe, values=[], width=8)
-        self.line_start_cb.grid(row=1, column=1, sticky='w')
-        tk.Label(lframe, text='End Point ID:').grid(row=2, column=0, sticky='e')
-        self.line_end_cb = ttk.Combobox(lframe, values=[], width=8)
-        self.line_end_cb.grid(row=2, column=1, sticky='w')
-        # Hide in 3D checkbox for line
-        self.line_hide_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(lframe, text='Hide in 3D', variable=self.line_hide_var).grid(row=3, column=0, columnspan=2, sticky='w')
-        tk.Button(lframe, text='Apply Line Edit', command=self.apply_line_edit).grid(row=4, column=0, columnspan=2, pady=6)
-
-        # Curve editor
-        cframe = tk.LabelFrame(right, text='Curve Editor')
-        cframe.pack(fill='x', pady=6)
-        tk.Label(cframe, text='Curve ID:').grid(row=0, column=0, sticky='e')
-        self.curve_id_var = tk.StringVar()
-        tk.Entry(cframe, textvariable=self.curve_id_var, state='disabled').grid(row=0, column=1, sticky='w')
-        tk.Label(cframe, text='Z Level:').grid(row=1, column=0, sticky='e')
-        self.curve_z_var = tk.StringVar()
-        tk.Entry(cframe, textvariable=self.curve_z_var).grid(row=1, column=1, sticky='w')
-        # Hide in 3D checkbox for curve
-        self.curve_hide_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(cframe, text='Hide in 3D', variable=self.curve_hide_var).grid(row=2, column=0, columnspan=2, sticky='w')
-        tk.Button(cframe, text='Apply Curve Edit', command=self.apply_curve_edit).grid(row=3, column=0, columnspan=2, pady=6)
+            self.curve_id_var = tk.StringVar()
+            self.curve_z_var = tk.StringVar()
+            self.curve_hide_var = tk.BooleanVar(value=False)
+        except Exception:
+            # Defensive fallback to simple attributes
+            self.point_id_var = None
+            self.point_realx_var = None
+            self.point_realy_var = None
+            self.point_z_var = None
+            self.point_hide_var = None
+            self.line_id_var = None
+            self.line_start_cb = None
+            self.line_end_cb = None
+            self.line_hide_var = None
+            self.curve_id_var = None
+            self.curve_z_var = None
+            self.curve_hide_var = None
 
         # Fill lists
         self.refresh_editor_lists()
+
+        # Capture base heading texts for treeviews so we can show sort indicators
+        try:
+            for tv in (self.points_tv, self.lines_tv, self.curves_tv, self.rfid_tv):
+                try:
+                    mapping = {}
+                    for col in tv['columns']:
+                        try:
+                            mapping[col] = tv.heading(col)['text']
+                        except Exception:
+                            mapping[col] = col.title()
+                    self._tv_heading_texts[id(tv)] = mapping
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        # Initial sort on startup: IDs ascending for each list
+        try:
+            self._treeview_sort(self.points_tv, 'id')
+            self._treeview_sort(self.lines_tv, 'id')
+            self._treeview_sort(self.curves_tv, 'id')
+            # no default sort for RFID (empty)
+        except Exception:
+            pass
 
     def refresh_editor_lists(self):
         # Points
@@ -463,7 +646,22 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             for p in self.user_points:
                 coords = f"({p.get('real_x', p.get('pdf_x'))}, {p.get('real_y', p.get('pdf_y'))})"
                 hidden_mark = '✓' if p.get('hidden', False) else ''
-                self.points_tv.insert('', 'end', iid=f"p_{p['id']}", values=(p['id'], coords, p.get('z', 0), hidden_mark))
+                # count references from lines and curves
+                try:
+                    pid = p['id']
+                    refs = 0
+                    for l in self.lines:
+                        if l.get('start_id') == pid or l.get('end_id') == pid:
+                            refs += 1
+                    for c in self.curves:
+                        if pid in c.get('arc_point_ids', []):
+                            refs += 1
+                        if c.get('start_id') == pid or c.get('end_id') == pid:
+                            refs += 1
+                except Exception:
+                    refs = 0
+                tags = ('new',) if p.get('just_duplicated') else ()
+                self.points_tv.insert('', 'end', iid=f"p_{p['id']}", values=(p['id'], coords, refs, p.get('z', 0), hidden_mark), tags=tags)
         except Exception:
             pass
 
@@ -472,9 +670,22 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             for it in self.lines_tv.get_children():
                 self.lines_tv.delete(it)
             for l in self.lines:
-                ends = f"{l['start_id']} -> {l['end_id']}"
                 hidden_mark = '✓' if l.get('hidden', False) else ''
-                self.lines_tv.insert('', 'end', iid=f"l_{l['id']}", values=(l['id'], ends, hidden_mark))
+                start = l.get('start_id', '')
+                end = l.get('end_id', '')
+                # determine z for the line: explicit 'z' if present, else average of endpoints if available
+                zval = ''
+                try:
+                    if 'z' in l:
+                        zval = l.get('z')
+                    else:
+                        s = next((p for p in self.user_points if p['id'] == start), None)
+                        e = next((p for p in self.user_points if p['id'] == end), None)
+                        if s is not None and e is not None:
+                            zval = (float(s.get('z', 0)) + float(e.get('z', 0))) / 2.0
+                except Exception:
+                    zval = ''
+                self.lines_tv.insert('', 'end', iid=f"l_{l['id']}", values=(l['id'], start, end, zval, hidden_mark))
         except Exception:
             pass
 
@@ -490,6 +701,14 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         except Exception:
             pass
 
+        # RFID (currently empty placeholder)
+        try:
+            for it in self.rfid_tv.get_children():
+                self.rfid_tv.delete(it)
+            # no population logic yet; reserved for future use
+        except Exception:
+            pass
+
         # Update combobox options for point IDs
         try:
             ids = [p['id'] for p in self.user_points]
@@ -497,6 +716,115 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             self.line_end_cb['values'] = ids
         except Exception:
             pass
+        # Ensure UI updates immediately
+        try:
+            self.master.update_idletasks()
+        except Exception:
+            pass
+
+        # Update Lines/Curves counters if present (keep in sync with lists)
+        try:
+            if hasattr(self, 'lines_label') and self.lines_label is not None:
+                try:
+                    self.lines_label.config(text=f"Lines: {len(self.lines)}")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'curves_label') and self.curves_label is not None:
+                try:
+                    self.curves_label.config(text=f"Curves: {len(self.curves)}")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _treeview_sort(self, tree, column):
+        """Sort a Treeview by `column`. Toggles ascending/descending each click."""
+        try:
+            # use id(tree) so keys are stable across same widget instances
+            key = (id(tree), column)
+            asc = self._tv_sort_state.get(key, True)
+
+            items = list(tree.get_children(''))
+
+            def _conv(v):
+                # try numeric conversion first
+                if v is None:
+                    return ''
+                try:
+                    if isinstance(v, (int, float)):
+                        return v
+                    s = str(v).strip()
+                    if s == '':
+                        return ''
+                    # try int then float
+                    try:
+                        return int(s)
+                    except Exception:
+                        return float(s)
+                except Exception:
+                    return str(v).lower()
+
+            decorated = []
+            for iid in items:
+                try:
+                    # prefer named column access
+                    val = tree.set(iid, column)
+                    if val is None:
+                        val = ''
+                except Exception:
+                    # fallback to positional values
+                    try:
+                        vals = tree.item(iid, 'values') or ()
+                        cols = tree['columns']
+                        try:
+                            idx = list(cols).index(column)
+                            val = vals[idx] if idx < len(vals) else ''
+                        except Exception:
+                            val = ''
+                    except Exception:
+                        val = ''
+                try:
+                    keyval = _conv(val)
+                except Exception:
+                    keyval = str(val)
+                decorated.append((keyval, iid))
+
+            decorated.sort(key=lambda x: (x[0] is None, x[0]), reverse=not asc)
+
+            for idx, (_k, iid) in enumerate(decorated):
+                try:
+                    tree.move(iid, '', idx)
+                except Exception:
+                    pass
+
+            # update header labels to show an arrow on the active column
+            try:
+                base = self._tv_heading_texts.get(id(tree), {})
+                cols = list(tree['columns'])
+                for col in cols:
+                    b = base.get(col, col.title())
+                    if col == column:
+                        arrow = '▲' if asc else '▼'
+                        label = f"{b} {arrow}"
+                    else:
+                        label = b
+                    try:
+                        tree.heading(col, text=label, command=(lambda c=col, t=tree: self._treeview_sort(t, c)))
+                    except Exception:
+                        try:
+                            tree.heading(col, text=label)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            # toggle for next time
+            self._tv_sort_state[key] = not asc
+        except Exception:
+            return
 
     def _on_point_select(self, event):
         # Treeview selection: extract point id from selected item
@@ -621,6 +949,883 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         except Exception:
             pass
 
+    def _on_treeview_double_click(self, event):
+        # Start inline edit on double click for the appropriate cell
+        widget = event.widget
+        try:
+            region = widget.identify('region', event.x, event.y)
+            if region != 'cell':
+                return
+            row = widget.identify_row(event.y)
+            col = widget.identify_column(event.x)
+            if not row or not col:
+                return
+            # Map Treeview column index (e.g. '#1','#2') to our headings
+            col_index = int(col.replace('#', '')) - 1
+            # Use the tree's actual column ordering so indexes match (includes 'refs' etc.)
+            try:
+                cols = tuple(widget['columns'])
+            except Exception:
+                # fallback to previous mappings
+                if widget is self.points_tv:
+                    cols = ('id', 'coords', 'refs', 'z', 'hidden')
+                elif widget is self.lines_tv:
+                    cols = ('id', 'from', 'to', 'z', 'hidden')
+                elif widget is self.curves_tv:
+                    cols = ('id', 'pts', 'z', 'hidden')
+                else:
+                    return
+            if col_index < 0 or col_index >= len(cols):
+                return
+            key = cols[col_index]
+            # do not edit ID column
+            if key == 'id' or key == 'pts':
+                return
+            bbox = widget.bbox(row, column=col)
+            if not bbox:
+                return
+            x, y, w, h = bbox
+            # get current value
+            cur = widget.item(row, 'values')[col_index]
+            # create entry overlay
+            entry = tk.Entry(widget)
+            entry.insert(0, str(cur))
+            entry.place(x=x, y=y, width=w, height=h)
+            entry.focus_set()
+
+            def commit(event=None):
+                new_val = entry.get()
+                entry.destroy()
+                self._commit_tree_edit(widget, row, key, new_val)
+
+            def cancel(event=None):
+                try:
+                    entry.destroy()
+                except Exception:
+                    pass
+
+            entry.bind('<Return>', commit)
+            entry.bind('<FocusOut>', commit)
+            entry.bind('<Escape>', cancel)
+        except Exception:
+            return
+
+    def _start_treeview_inline_edit(self, tree, iid, key):
+        """Programmatically open the inline Entry editor for a given tree item and column key."""
+        try:
+            cols = list(tree['columns'])
+            if key not in cols:
+                return
+            col_index = cols.index(key)
+            col_id = f"#{col_index+1}"
+            bbox = tree.bbox(iid, column=col_id)
+            if not bbox:
+                # ensure layout updated and try again
+                try:
+                    self.master.update_idletasks()
+                    bbox = tree.bbox(iid, column=col_id)
+                except Exception:
+                    bbox = None
+            if not bbox:
+                return
+            x, y, w, h = bbox
+            vals = tree.item(iid, 'values') or ()
+            cur = vals[col_index] if col_index < len(vals) else ''
+            entry = tk.Entry(tree)
+            entry.insert(0, str(cur))
+            entry.place(x=x, y=y, width=w, height=h)
+            entry.focus_set()
+
+            def commit(event=None):
+                new_val = entry.get()
+                try:
+                    entry.destroy()
+                except Exception:
+                    pass
+                self._commit_tree_edit(tree, iid, key, new_val)
+
+            def cancel(event=None):
+                try:
+                    entry.destroy()
+                except Exception:
+                    pass
+
+            entry.bind('<Return>', commit)
+            entry.bind('<FocusOut>', commit)
+            entry.bind('<Escape>', cancel)
+        except Exception:
+            return
+
+    def _commit_tree_edit(self, tree, iid, key, new_val):
+        # Update underlying data structures based on which tree and key
+        try:
+            if tree is self.points_tv:
+                pid = int(tree.item(iid, 'values')[0])
+                p = next((pp for pp in self.user_points if pp['id'] == pid), None)
+                if p is None:
+                    return
+                if key == 'coords':
+                    # Expect 'x, y' or 'x y'
+                    s = new_val.replace(',', ' ').split()
+                    if len(s) >= 2:
+                        try:
+                            rx = float(s[0])
+                            ry = float(s[1])
+                            p['real_x'] = round(rx, 2)
+                            p['real_y'] = round(ry, 2)
+                        except ValueError:
+                            return
+                elif key == 'z':
+                    # Validate numeric Z
+                    try:
+                        new_z = float(new_val)
+                    except ValueError:
+                        messagebox.showerror("Invalid Z", "Z value must be numeric.")
+                        return
+                    # If this point was freshly duplicated, apply change silently.
+                    if p.get('just_duplicated'):
+                        try:
+                            p['z'] = new_z
+                        except Exception:
+                            pass
+                        try:
+                            del p['just_duplicated']
+                        except Exception:
+                            pass
+                    else:
+                        # Check for other points at same XY with different Z (conflict)
+                        try:
+                            others = self._find_points_at_xy(p)
+                            # filter out those that actually differ in z
+                            conflicts = [q for q in others if float(q.get('z', 0)) != new_z]
+                        except Exception:
+                            conflicts = []
+
+                        if conflicts:
+                            # Synchronizing existing points' Z is unsafe because they may be referenced
+                            # by other lines/curves. Offer only duplication or cancel.
+                            resp = messagebox.askyesno(
+                                "Z level conflict",
+                                f"Found {len(conflicts)} other point(s) at the same XY with different Z values.\n\n"
+                                "Yes = Create a new duplicate point with this Z (you can optionally reassign references).\n"
+                                "No = Cancel the change.")
+                            if not resp:
+                                # User chose No -> cancel
+                                return
+                            # Create duplicate point with same coordinates but new Z
+                            new_pt_id = self._create_duplicate_point(p, new_z)
+                            # Inform the user; reassigning references is a separate action
+                            try:
+                                messagebox.showinfo("Duplicate Created",
+                                                    f"Created duplicate point ID {new_pt_id} with Z={new_z}.\n\n"
+                                                    "If you want to move lines/curves to the new point, select the original point and choose 'Reassign References' from the editor context menu.")
+                            except Exception:
+                                pass
+                        else:
+                            # no conflicts, just set
+                            p['z'] = new_z
+                elif key == 'hidden':
+                    p['hidden'] = bool(new_val) and new_val not in ('', '0', 'False', 'false')
+                # If this point was freshly duplicated, clear the transient highlight now that user edited it
+                try:
+                    if p.get('just_duplicated'):
+                        try:
+                            del p['just_duplicated']
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                # refresh visuals
+                self.redraw_markers()
+                self.refresh_editor_lists()
+                try:
+                    self.update_3d_plot()
+                    if hasattr(self, '_3d_canvas') and self._3d_canvas is not None:
+                        try:
+                            self._3d_canvas.draw_idle()
+                        except Exception:
+                            try:
+                                self._3d_canvas.draw()
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+            elif tree is self.lines_tv:
+                lid = int(tree.item(iid, 'values')[0])
+                l = next((ll for ll in self.lines if ll['id'] == lid), None)
+                if l is None:
+                    return
+                if key == 'from':
+                    try:
+                        start_id = int(str(new_val).strip())
+                        if any(p['id'] == start_id for p in self.user_points):
+                            l['start_id'] = start_id
+                    except Exception:
+                        return
+                elif key == 'to':
+                    try:
+                        end_id = int(str(new_val).strip())
+                        if any(p['id'] == end_id for p in self.user_points):
+                            l['end_id'] = end_id
+                    except Exception:
+                        return
+                elif key == 'z':
+                    try:
+                        new_z = float(new_val)
+                    except Exception:
+                        messagebox.showerror("Invalid Z", "Z value must be numeric.")
+                        return
+                    # Update endpoints: if safe to set directly (not referenced elsewhere), set their z.
+                    # Otherwise, create duplicates at new Z and update this line to point to duplicates.
+                    start_id = l.get('start_id')
+                    end_id = l.get('end_id')
+                    id_map = {}
+                    for pid in (start_id, end_id):
+                        try:
+                            p = next((pp for pp in self.user_points if pp['id'] == pid), None)
+                            if p is None:
+                                continue
+                            cur_z = float(p.get('z', 0))
+                            if cur_z == new_z:
+                                continue
+                            # count references excluding this line
+                            refs = 0
+                            for ln in self.lines:
+                                if ln.get('id') == l.get('id'):
+                                    continue
+                                if ln.get('start_id') == pid or ln.get('end_id') == pid:
+                                    refs += 1
+                            for cv in self.curves:
+                                if pid in cv.get('arc_point_ids', []):
+                                    refs += 1
+                                if cv.get('start_id') == pid or cv.get('end_id') == pid:
+                                    refs += 1
+                            if refs > 0:
+                                # duplicate point
+                                new_pid = self._create_duplicate_point(p, new_z)
+                                if new_pid:
+                                    id_map[pid] = new_pid
+                            else:
+                                # safe to update in-place
+                                try:
+                                    p['z'] = new_z
+                                except Exception:
+                                    pass
+                        except Exception:
+                            continue
+                    # apply id_map replacements to this line
+                    if id_map:
+                        if start_id in id_map:
+                            l['start_id'] = id_map[start_id]
+                        if end_id in id_map:
+                            l['end_id'] = id_map[end_id]
+                elif key == 'hidden':
+                    l['hidden'] = bool(new_val) and new_val not in ('', '0', 'False', 'false')
+                self.redraw_markers()
+                self.refresh_editor_lists()
+                try:
+                    self.update_3d_plot()
+                    if hasattr(self, '_3d_canvas') and self._3d_canvas is not None:
+                        try:
+                            self._3d_canvas.draw_idle()
+                        except Exception:
+                            try:
+                                self._3d_canvas.draw()
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+            elif tree is self.curves_tv:
+                cid = int(tree.item(iid, 'values')[0])
+                c = next((cc for cc in self.curves if cc['id'] == cid), None)
+                if c is None:
+                    return
+                if key == 'z':
+                    try:
+                        new_z = float(new_val)
+                    except ValueError:
+                        messagebox.showerror("Invalid Z", "Z value must be numeric.")
+                        return
+                    # Check if arc_point_ids reference points that have different Z values
+                    try:
+                        ids = c.get('arc_point_ids', [])
+                        differing = []
+                        for pid in ids:
+                            p = next((pp for pp in self.user_points if pp['id'] == pid), None)
+                            if p and float(p.get('z', 0)) != new_z:
+                                differing.append(p)
+                    except Exception:
+                        differing = []
+                    if differing:
+                        resp = messagebox.askyesnocancel(
+                            "Curve Z conflict",
+                            f"Some points used by this curve have different Z values.\n\n"
+                            "Yes = Apply this Z to all points used by the curve.\n"
+                            "No = Keep point Zs unchanged and set only the curve's z level.\n"
+                            "Cancel = Abort change.")
+                        if resp is None:
+                            return
+                        if resp is True:
+                            # Apply new Z to points used by the curve. If a point is referenced elsewhere,
+                            # duplicate it at the new Z and update the curve to use the duplicate.
+                            id_map = {}
+                            for p in differing:
+                                try:
+                                    pid = p.get('id')
+                                    # count references excluding this curve
+                                    refs = 0
+                                    for ln in self.lines:
+                                        if ln.get('start_id') == pid or ln.get('end_id') == pid:
+                                            refs += 1
+                                    for cv in self.curves:
+                                        if cv.get('id') == c.get('id'):
+                                            continue
+                                        if pid in cv.get('arc_point_ids', []):
+                                            refs += 1
+                                        if cv.get('start_id') == pid or cv.get('end_id') == pid:
+                                            refs += 1
+                                    if refs > 0:
+                                        new_pid = self._create_duplicate_point(p, new_z)
+                                        if new_pid:
+                                            id_map[pid] = new_pid
+                                    else:
+                                        try:
+                                            p['z'] = new_z
+                                        except Exception:
+                                            pass
+                                except Exception:
+                                    continue
+                            # apply id_map replacements in this curve
+                            if id_map:
+                                try:
+                                    c['arc_point_ids'] = [id_map.get(pid, pid) for pid in c.get('arc_point_ids', [])]
+                                except Exception:
+                                    pass
+                                if c.get('start_id') in id_map:
+                                    c['start_id'] = id_map[c.get('start_id')]
+                                if c.get('end_id') in id_map:
+                                    c['end_id'] = id_map[c.get('end_id')]
+                            c['z_level'] = new_z
+                        else:
+                            c['z_level'] = new_z
+                    else:
+                        c['z_level'] = new_z
+                elif key == 'hidden':
+                    c['hidden'] = bool(new_val) and new_val not in ('', '0', 'False', 'false')
+                self.redraw_markers()
+                self.refresh_editor_lists()
+                try:
+                    self.update_3d_plot()
+                    if hasattr(self, '_3d_canvas') and self._3d_canvas is not None:
+                        try:
+                            self._3d_canvas.draw_idle()
+                        except Exception:
+                            try:
+                                self._3d_canvas.draw()
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+        except Exception:
+            return
+
+    def _show_editor_menu(self, event):
+        try:
+            widget = event.widget
+            # remember which widget invoked the editor menu so handlers can act contextually
+            try:
+                self._editor_menu_widget = widget
+            except Exception:
+                pass
+            # select the row under the cursor so action applies to it
+            iid = widget.identify_row(event.y)
+            if iid:
+                widget.selection_set(iid)
+            self.editor_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            try:
+                self.editor_menu.grab_release()
+            except Exception:
+                pass
+
+    def editor_reassign_references(self):
+        # Reassign references from a selected source point to a target point chosen by the user
+        try:
+            sel = self.points_tv.selection()
+            if not sel:
+                messagebox.showwarning('No Selection', 'Select a single source point first.')
+                return
+            if len(sel) > 1:
+                messagebox.showwarning('Multiple Selection', 'Select only one source point to reassign from.')
+                return
+            src_iid = sel[0]
+            try:
+                src_id = int(self.points_tv.item(src_iid, 'values')[0])
+            except Exception:
+                messagebox.showerror('Invalid Selection', 'Could not determine selected point id.')
+                return
+
+            # Find references that point to src_id
+            line_refs = [l for l in self.lines if l.get('start_id') == src_id or l.get('end_id') == src_id]
+            curve_refs = [c for c in self.curves if src_id in c.get('arc_point_ids', []) or c.get('start_id') == src_id or c.get('end_id') == src_id]
+
+            if not line_refs and not curve_refs:
+                messagebox.showinfo('No References', f'Point {src_id} is not referenced by any line or curve.')
+                return
+
+            # Ask for target point id via simple dialog; offer a default candidate if available
+            # Build list of candidate target ids (exclude source)
+            candidates = [p['id'] for p in self.user_points if p['id'] != src_id]
+            if not candidates:
+                messagebox.showerror('No Targets', 'No other points available to reassign to.')
+                return
+            # Use modal combobox dialog so the user can select with mouse only
+            from tkinter import Toplevel, Label, Button
+            from tkinter import StringVar
+            from tkinter import ttk
+
+            def ask_target(cands, default):
+                res = {'ok': False, 'val': None}
+                dlg = Toplevel(self.master)
+                dlg.transient(self.master)
+                dlg.grab_set()
+                dlg.title('Select Target Point')
+                Label(dlg, text=f'Available targets: {cands}').grid(row=0, column=0, columnspan=2, padx=8, pady=(8,4))
+                Label(dlg, text='Target ID:').grid(row=1, column=0, sticky='e', padx=(8,4), pady=4)
+                v = StringVar(value=str(default))
+                cb = ttk.Combobox(dlg, values=cands, textvariable=v, state='readonly')
+                cb.grid(row=1, column=1, sticky='w', padx=(0,8), pady=4)
+
+                def on_ok():
+                    try:
+                        val = int(v.get())
+                        res['ok'] = True
+                        res['val'] = val
+                        dlg.destroy()
+                    except Exception:
+                        messagebox.showerror('Invalid', 'Select a valid target from the list.')
+
+                def on_cancel():
+                    dlg.destroy()
+
+                btnf = ttk.Frame(dlg)
+                btnf.grid(row=2, column=0, columnspan=2, pady=(6,8))
+                Button(btnf, text='OK', command=on_ok).pack(side='left', padx=6)
+                Button(btnf, text='Cancel', command=on_cancel).pack(side='left')
+
+                dlg.update_idletasks()
+                try:
+                    x = self.master.winfo_rootx() + (self.master.winfo_width() - dlg.winfo_width()) // 2
+                    y = self.master.winfo_rooty() + (self.master.winfo_height() - dlg.winfo_height()) // 2
+                    dlg.geometry(f'+{x}+{y}')
+                except Exception:
+                    pass
+
+                self.master.wait_window(dlg)
+                return res
+
+            default = candidates[0]
+            resp = ask_target(candidates, default)
+            if not resp.get('ok'):
+                return
+            tgt = resp.get('val')
+            if tgt == src_id:
+                messagebox.showwarning('Same Point', 'Target must be a different point.')
+                return
+            if tgt not in candidates:
+                messagebox.showerror('Invalid Target', f'Point {tgt} is not a valid target.')
+                return
+
+            # Confirm with the user, showing counts
+            if not messagebox.askyesno('Confirm Reassign', f'Reassign {len(line_refs)} line(s) and {len(curve_refs)} curve(s) from {src_id} to {tgt}?'):
+                return
+
+            # Perform reassignment
+            try:
+                self._reassign_references(src_id, tgt)
+            except Exception:
+                messagebox.showerror('Reassign Failed', 'An error occurred while reassigning references.')
+                return
+            # Refresh visuals and lists
+            self.redraw_markers()
+            try:
+                self.update_3d_plot()
+            except Exception:
+                pass
+            self.refresh_editor_lists()
+            messagebox.showinfo('Reassign Complete', f'Reassigned references from {src_id} to {tgt}.')
+        except Exception as e:
+            messagebox.showerror('Error', f'Error in reassign: {e}')
+
+    def editor_insert_line(self):
+        """Insert a new line. Auto-assign ID, prompt for start/end point IDs, validate and add."""
+        try:
+            widget = getattr(self, '_editor_menu_widget', None)
+            # only valid when invoked from the Lines treeview (but still allow direct call)
+            if widget is not None and widget is not self.lines_tv:
+                if messagebox.askyesno('Insert Line', 'Insert line from current selection? (Yes = use selection; No = abort)') is False:
+                    return
+
+            # gather available point ids
+            point_ids = [p['id'] for p in self.user_points]
+            if not point_ids:
+                messagebox.showerror('No Points', 'No points available to create a line.')
+                return
+            # Use a small modal dialog with comboboxes to choose start/end IDs
+            from tkinter import Toplevel, Label, Button
+            from tkinter import StringVar
+            from tkinter import ttk
+
+            def ask_start_end(ids, default_start, default_end):
+                res = {'ok': False, 'start': None, 'end': None}
+                dlg = Toplevel(self.master)
+                dlg.transient(self.master)
+                dlg.grab_set()
+                dlg.title('Insert Line')
+                Label(dlg, text='Start ID:').grid(row=0, column=0, sticky='e', padx=(8,4), pady=4)
+                start_var = StringVar(value=str(default_start))
+                start_cb = ttk.Combobox(dlg, values=ids, textvariable=start_var, state='readonly')
+                start_cb.grid(row=1, column=1, sticky='w', padx=(0,8), pady=4)
+                Label(dlg, text='End ID:').grid(row=2, column=0, sticky='e', padx=(8,4), pady=4)
+                end_var = StringVar(value=str(default_end))
+                end_cb = ttk.Combobox(dlg, values=ids, textvariable=end_var, state='readonly')
+                end_cb.grid(row=2, column=1, sticky='w', padx=(0,8), pady=4)
+
+                # Precompute z-by-id map for filtering
+                try:
+                    z_by_id = {p['id']: float(p.get('z', 0)) for p in self.user_points}
+                except Exception:
+                    z_by_id = {i: 0.0 for i in ids}
+
+                def filter_other(chosen_id, target_cb):
+                    # Show only points that share the same Z as chosen_id
+                    try:
+                        if chosen_id is None:
+                            target_cb['values'] = ids
+                            return
+                        chosen_z = z_by_id.get(int(chosen_id), None)
+                        if chosen_z is None:
+                            target_cb['values'] = ids
+                            return
+                        cand = [i for i in ids if abs(float(z_by_id.get(i, 0.0)) - chosen_z) <= 1e-9 and i != int(chosen_id)]
+                        # If no other on same Z, allow selecting any different id (user may still pick)
+                        if not cand:
+                            cand = [i for i in ids if i != int(chosen_id)]
+                        target_cb['values'] = cand
+                        # if current target value not in candidates, set to first
+                        try:
+                            cur = int(target_cb.get())
+                            if cur not in cand and cand:
+                                target_cb.set(cand[0])
+                        except Exception:
+                            if cand:
+                                target_cb.set(cand[0])
+                    except Exception:
+                        try:
+                            target_cb['values'] = ids
+                        except Exception:
+                            pass
+
+                def on_start_selected(event=None):
+                    try:
+                        s = int(start_var.get())
+                    except Exception:
+                        s = None
+                    filter_other(s, end_cb)
+
+                def on_end_selected(event=None):
+                    try:
+                        e = int(end_var.get())
+                    except Exception:
+                        e = None
+                    filter_other(e, start_cb)
+
+                # Bind selection events so either combobox can be chosen first
+                start_cb.bind('<<ComboboxSelected>>', on_start_selected)
+                end_cb.bind('<<ComboboxSelected>>', on_end_selected)
+
+                # Initialize filtering to prefer end choices matching default start
+                try:
+                    on_start_selected()
+                except Exception:
+                    pass
+
+                def on_ok():
+                    try:
+                        s = int(start_var.get())
+                        e = int(end_var.get())
+                        if s == e:
+                            messagebox.showerror('Invalid IDs', 'Start and end must differ.')
+                            return
+                        res['ok'] = True
+                        res['start'] = s
+                        res['end'] = e
+                        dlg.destroy()
+                    except Exception:
+                        messagebox.showerror('Invalid', 'Please select valid IDs.')
+
+                def on_cancel():
+                    dlg.destroy()
+
+                btn_frame = ttk.Frame(dlg)
+                btn_frame.grid(row=3, column=0, columnspan=2, pady=(6,8))
+                Button(btn_frame, text='OK', command=on_ok).pack(side='left', padx=6)
+                Button(btn_frame, text='Cancel', command=on_cancel).pack(side='left')
+
+                # center dialog
+                dlg.update_idletasks()
+                try:
+                    x = self.master.winfo_rootx() + (self.master.winfo_width() - dlg.winfo_width()) // 2
+                    y = self.master.winfo_rooty() + (self.master.winfo_height() - dlg.winfo_height()) // 2
+                    dlg.geometry(f'+{x}+{y}')
+                except Exception:
+                    pass
+
+                self.master.wait_window(dlg)
+                return res
+
+            default_start = point_ids[0]
+            default_end = point_ids[0] if len(point_ids) == 1 else point_ids[-1]
+            resp = ask_start_end(point_ids, default_start, default_end)
+            if not resp.get('ok'):
+                return
+            start_id = resp.get('start')
+            end_id = resp.get('end')
+
+            if start_id == end_id:
+                messagebox.showerror('Invalid IDs', 'Start and end must be different point IDs.')
+                return
+
+            # validate points exist
+            s = next((p for p in self.user_points if p['id'] == start_id), None)
+            e = next((p for p in self.user_points if p['id'] == end_id), None)
+            if s is None or e is None:
+                messagebox.showerror('Invalid ID', 'One or both point IDs do not exist.')
+                return
+
+            # test z level equality
+            try:
+                sz = float(s.get('z', 0))
+                ez = float(e.get('z', 0))
+            except Exception:
+                sz = float(s.get('z', 0)) if s else 0.0
+                ez = float(e.get('z', 0)) if e else 0.0
+            if abs(sz - ez) > 1e-9:
+                messagebox.showerror('Z Mismatch', f'Cannot create line: start Z={sz}, end Z={ez} differ.')
+                return
+
+            # create line
+            lid = self.next_line_id()
+            new_line = {'id': lid, 'start_id': start_id, 'end_id': end_id, 'z': sz, 'hidden': False}
+            self.lines.append(new_line)
+
+            # refresh and select
+            try:
+                self.redraw_markers()
+            except Exception:
+                pass
+            try:
+                self.update_3d_plot()
+            except Exception:
+                pass
+            self.refresh_editor_lists()
+            try:
+                iid = f"l_{lid}"
+                self.lines_tv.selection_set(iid)
+                self.lines_tv.see(iid)
+            except Exception:
+                pass
+            messagebox.showinfo('Line Created', f'Created line ID {lid} from {start_id} to {end_id}.')
+        except Exception as e:
+            messagebox.showerror('Error', f'Error creating line: {e}')
+
+    def editor_duplicate_point(self):
+        """Duplicate the selected point(s). Prompt for Z value for each duplicate."""
+        try:
+            sel = list(self.points_tv.selection())
+            if not sel:
+                messagebox.showwarning('No Selection', 'Select one or more points to duplicate.')
+                return
+            from tkinter import simpledialog
+            new_ids = []
+            for iid in sel:
+                try:
+                    src_id = int(self.points_tv.item(iid, 'values')[0])
+                except Exception:
+                    continue
+                src = next((p for p in self.user_points if p['id'] == src_id), None)
+                if src is None:
+                    continue
+                # create duplicate with same Z initially; user can edit Z afterwards via editor
+                new_id = self._create_duplicate_point(src, src.get('z', 0))
+                if not new_id:
+                    continue
+                new_ids.append(new_id)
+
+            # Refresh visuals and lists
+            try:
+                self.redraw_markers()
+            except Exception:
+                pass
+            self.refresh_editor_lists()
+            try:
+                self.update_3d_plot()
+            except Exception:
+                pass
+
+            # select and show the last created duplicate if present
+            if new_ids:
+                try:
+                    last_iid = f"p_{new_ids[-1]}"
+                    self.points_tv.selection_set(last_iid)
+                    self.points_tv.see(last_iid)
+                    # open inline editor on the Z column for the newly created point
+                    try:
+                        self.master.update_idletasks()
+                        self._start_treeview_inline_edit(self.points_tv, last_iid, 'z')
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+
+            messagebox.showinfo('Duplicate Complete', f'Created {len(new_ids)} duplicate point(s).')
+            # keep highlight until user edits the new point; do not auto-clear
+        except Exception as e:
+            messagebox.showerror('Error', f'Error duplicating point: {e}')
+
+    # --- Z-level helpers ---
+    def _find_points_at_xy(self, point, tol=1e-6):
+        """Return other points that share the same XY (pdf or real coords) within tolerance."""
+        results = []
+        try:
+            x = point.get('real_x', point.get('pdf_x'))
+            y = point.get('real_y', point.get('pdf_y'))
+            for p in self.user_points:
+                if p is point:
+                    continue
+                px = p.get('real_x', p.get('pdf_x'))
+                py = p.get('real_y', p.get('pdf_y'))
+                try:
+                    if abs(float(px) - float(x)) <= tol and abs(float(py) - float(y)) <= tol:
+                        results.append(p)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return results
+
+    def _create_duplicate_point(self, orig_point, z_value):
+        """Create a new point with same coordinates as orig_point but with provided z; return new id."""
+        try:
+            new_id = self.next_point_id()
+            new_pt = {
+                'id': new_id,
+                'pdf_x': orig_point.get('pdf_x', orig_point.get('real_x', 0.0)),
+                'pdf_y': orig_point.get('pdf_y', orig_point.get('real_y', 0.0)),
+                'real_x': orig_point.get('real_x', orig_point.get('pdf_x', 0.0)),
+                'real_y': orig_point.get('real_y', orig_point.get('pdf_y', 0.0)),
+                'z': float(z_value),
+                # mark freshly duplicated points so subsequent inline edits can be silent
+                'just_duplicated': True,
+                'hidden': bool(orig_point.get('hidden', False))
+            }
+            self.user_points.append(new_pt)
+            # Refresh labels and visuals
+            try:
+                self.update_points_label()
+            except Exception:
+                pass
+            try:
+                self.redraw_markers()
+            except Exception:
+                pass
+            try:
+                # ensure editor lists reflect the new point
+                self.refresh_editor_lists()
+            except Exception:
+                pass
+            return new_id
+        except Exception:
+            return None
+
+    def _reassign_references(self, old_pid, new_pid):
+        """Replace references to old_pid with new_pid in lines and curves."""
+        try:
+            for l in self.lines:
+                if l.get('start_id') == old_pid:
+                    l['start_id'] = new_pid
+                if l.get('end_id') == old_pid:
+                    l['end_id'] = new_pid
+            for c in self.curves:
+                # replace in arc_point_ids
+                if 'arc_point_ids' in c and c['arc_point_ids']:
+                    c['arc_point_ids'] = [new_pid if pid == old_pid else pid for pid in c['arc_point_ids']]
+                # replace start/end ids if present
+                if c.get('start_id') == old_pid:
+                    c['start_id'] = new_pid
+                if c.get('end_id') == old_pid:
+                    c['end_id'] = new_pid
+        except Exception:
+            pass
+
+    def editor_toggle_hide_selected(self):
+        # Toggle hidden flag for all selected items across Points, Lines and Curves
+        changed = False
+        try:
+            for item in self.points_tv.selection():
+                try:
+                    pid = int(self.points_tv.item(item, 'values')[0])
+                    p = next((pp for pp in self.user_points if pp['id'] == pid), None)
+                    if p is not None:
+                        p['hidden'] = not bool(p.get('hidden', False))
+                        changed = True
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        try:
+            for item in self.lines_tv.selection():
+                try:
+                    lid = int(self.lines_tv.item(item, 'values')[0])
+                    l = next((ll for ll in self.lines if ll['id'] == lid), None)
+                    if l is not None:
+                        l['hidden'] = not bool(l.get('hidden', False))
+                        changed = True
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        try:
+            for item in self.curves_tv.selection():
+                try:
+                    cid = int(self.curves_tv.item(item, 'values')[0])
+                    c = next((cc for cc in self.curves if cc['id'] == cid), None)
+                    if c is not None:
+                        c['hidden'] = not bool(c.get('hidden', False))
+                        changed = True
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        if changed:
+            self.redraw_markers()
+            try:
+                self.update_3d_plot()
+                if hasattr(self, '_3d_canvas') and self._3d_canvas is not None:
+                    try:
+                        self._3d_canvas.draw_idle()
+                    except Exception:
+                        try:
+                            self._3d_canvas.draw()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            self.refresh_editor_lists()
+
     
 
     def apply_curve_edit(self):
@@ -646,66 +1851,73 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         self.refresh_editor_lists()
 
     def editor_delete_selected(self):
-        # Delete selected point/line/curve based on which list has focus
-        # Points treeview selection
-        pts_sel = self.points_tv.selection()
-        if pts_sel:
-            item = pts_sel[0]
-            try:
-                pid = int(self.points_tv.item(item, 'values')[0])
-            except Exception:
-                return
-            p = next((pp for pp in self.user_points if pp['id'] == pid), None)
-            if p is None:
-                return
-            try:
-                self.delete_point(p)
-            except Exception:
-                self.user_points = [pp for pp in self.user_points if pp['id'] != p['id']]
-            self.redraw_markers()
-            self.update_points_label()
-            self.refresh_editor_lists()
-            return
-
-        # Lines treeview selection
-        lines_sel = self.lines_tv.selection()
-        if lines_sel:
-            item = lines_sel[0]
-            try:
-                lid = int(self.lines_tv.item(item, 'values')[0])
-            except Exception:
-                return
-            l = next((ll for ll in self.lines if ll['id'] == lid), None)
-            if l is None:
-                return
-            try:
-                self.delete_line(l)
-            except Exception:
-                self.lines = [ll for ll in self.lines if ll['id'] != l['id']]
-            self.redraw_markers()
-            self.refresh_editor_lists()
-            return
-
-        # Curves treeview selection
-        curves_sel = self.curves_tv.selection()
-        if curves_sel:
-            item = curves_sel[0]
-            try:
-                cid = int(self.curves_tv.item(item, 'values')[0])
-            except Exception:
-                return
-            c = next((cc for cc in self.curves if cc['id'] == cid), None)
-            if c is None:
-                return
-            try:
-                self.delete_curve(c)
-            except Exception:
-                self.curves = [cc for cc in self.curves if cc['id'] != c['id']]
+        # Delete all selected points, lines and curves (multi-select aware)
+        deleted = False
         try:
-            self.update_3d_plot()
+            pts_sel = list(self.points_tv.selection())
+            for item in pts_sel:
+                try:
+                    pid = int(self.points_tv.item(item, 'values')[0])
+                except Exception:
+                    continue
+                p = next((pp for pp in self.user_points if pp['id'] == pid), None)
+                if p is None:
+                    continue
+                try:
+                    self.delete_point(p)
+                except Exception:
+                    self.user_points = [pp for pp in self.user_points if pp['id'] != p['id']]
+                deleted = True
         except Exception:
             pass
+
+        try:
+            lines_sel = list(self.lines_tv.selection())
+            for item in lines_sel:
+                try:
+                    lid = int(self.lines_tv.item(item, 'values')[0])
+                except Exception:
+                    continue
+                l = next((ll for ll in self.lines if ll['id'] == lid), None)
+                if l is None:
+                    continue
+                try:
+                    self.delete_line(l)
+                except Exception:
+                    self.lines = [ll for ll in self.lines if ll['id'] != l['id']]
+                deleted = True
+        except Exception:
+            pass
+
+        try:
+            curves_sel = list(self.curves_tv.selection())
+            for item in curves_sel:
+                try:
+                    cid = int(self.curves_tv.item(item, 'values')[0])
+                except Exception:
+                    continue
+                c = next((cc for cc in self.curves if cc['id'] == cid), None)
+                if c is None:
+                    continue
+                try:
+                    self.delete_curve(c)
+                except Exception:
+                    self.curves = [cc for cc in self.curves if cc['id'] != c['id']]
+                deleted = True
+        except Exception:
+            pass
+
+        if deleted:
+            try:
+                self.update_3d_plot()
+            except Exception:
+                pass
+        # Always refresh lists after any deletion attempt
+        self.redraw_markers()
+        self.update_points_label()
         self.refresh_editor_lists()
+
+    # note: clearing of 'just_duplicated' is handled when the user makes an edit
 
     def update_3d_plot(self):
         # Initialize if needed
@@ -851,6 +2063,18 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 ax.set_xlim3d(nx0, nx1)
                 ax.set_ylim3d(ny0, ny1)
                 ax.set_zlim3d(nz0, nz1)
+        except Exception:
+            pass
+        # Ensure the Matplotlib canvas redraws so visibility changes appear immediately
+        try:
+            if hasattr(self, '_3d_canvas') and self._3d_canvas is not None:
+                try:
+                    self._3d_canvas.draw_idle()
+                except Exception:
+                    try:
+                        self._3d_canvas.draw()
+                    except Exception:
+                        pass
         except Exception:
             pass
     def increase_point_size(self):
@@ -1002,6 +2226,125 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             self.config['Calibration'] = {}
             self.config['Points'] = {}
 
+    def open_display_options(self):
+        """Open a separate Options window to edit display colors and sizes."""
+        try:
+            from tkinter import Toplevel, Label, Button
+            dlg = Toplevel(self.master)
+            dlg.transient(self.master)
+            dlg.title('Display Options')
+            dlg.grab_set()
+
+            from tkinter import colorchooser
+
+            def choose_point_color():
+                c = colorchooser.askcolor(title='Choose point color', color=self.point_color_2d)
+                if c and c[1]:
+                    self.point_color_2d = c[1]
+                    try:
+                        self._3d_point_color = self.point_color_2d
+                    except Exception:
+                        pass
+                    try:
+                        if self.point_color_swatch is not None:
+                            self.point_color_swatch.config(bg=self.point_color_2d)
+                    except Exception:
+                        pass
+                    try:
+                        self.redraw_markers()
+                    except Exception:
+                        pass
+
+            def choose_line_color():
+                c = colorchooser.askcolor(title='Choose line color', color=self.line_color_2d)
+                if c and c[1]:
+                    self.line_color_2d = c[1]
+                    try:
+                        self._3d_line_color = self.line_color_2d
+                    except Exception:
+                        pass
+                    try:
+                        if self.line_color_swatch is not None:
+                            self.line_color_swatch.config(bg=self.line_color_2d)
+                    except Exception:
+                        pass
+                    try:
+                        self.redraw_markers()
+                    except Exception:
+                        pass
+
+            def choose_curve_color():
+                c = colorchooser.askcolor(title='Choose curve color', color=self.curve_color_2d)
+                if c and c[1]:
+                    self.curve_color_2d = c[1]
+                    try:
+                        self._3d_curve_color = self.curve_color_2d
+                    except Exception:
+                        pass
+                    try:
+                        if self.curve_color_swatch is not None:
+                            self.curve_color_swatch.config(bg=self.curve_color_2d)
+                    except Exception:
+                        pass
+                    try:
+                        self.redraw_markers()
+                    except Exception:
+                        pass
+
+            # color row
+            row = 0
+            tk.Label(dlg, text='Point Color:').grid(row=row, column=0, sticky='e', padx=6, pady=4)
+            pc_btn = Button(dlg, text='Choose...', command=choose_point_color)
+            pc_btn.grid(row=row, column=1, sticky='w', padx=6, pady=4)
+            self.point_color_swatch = tk.Label(dlg, width=3, bg=self.point_color_2d, relief='sunken')
+            self.point_color_swatch.grid(row=row, column=2, sticky='w', padx=6)
+
+            row += 1
+            tk.Label(dlg, text='Line Color:').grid(row=row, column=0, sticky='e', padx=6, pady=4)
+            lc_btn = Button(dlg, text='Choose...', command=choose_line_color)
+            lc_btn.grid(row=row, column=1, sticky='w', padx=6, pady=4)
+            self.line_color_swatch = tk.Label(dlg, width=3, bg=self.line_color_2d, relief='sunken')
+            self.line_color_swatch.grid(row=row, column=2, sticky='w', padx=6)
+
+            row += 1
+            tk.Label(dlg, text='Curve Color:').grid(row=row, column=0, sticky='e', padx=6, pady=4)
+            cc_btn = Button(dlg, text='Choose...', command=choose_curve_color)
+            cc_btn.grid(row=row, column=1, sticky='w', padx=6, pady=4)
+            self.curve_color_swatch = tk.Label(dlg, width=3, bg=self.curve_color_2d, relief='sunken')
+            self.curve_color_swatch.grid(row=row, column=2, sticky='w', padx=6)
+
+            row += 1
+            # Sizes
+            tk.Label(dlg, text='Point Size:').grid(row=row, column=0, sticky='e', padx=6, pady=6)
+            ps = tk.Scale(dlg, from_=1, to=30, orient='horizontal', variable=self.point_size_var, command=lambda v: self._set_point_size(v))
+            ps.grid(row=row, column=1, columnspan=2, sticky='ew', padx=6)
+
+            row += 1
+            tk.Label(dlg, text='Line Width:').grid(row=row, column=0, sticky='e', padx=6, pady=6)
+            lw = tk.Scale(dlg, from_=1, to=12, orient='horizontal', variable=self.line_width_var, command=lambda v: self._set_line_width(v))
+            lw.grid(row=row, column=1, columnspan=2, sticky='ew', padx=6)
+
+            row += 1
+            tk.Label(dlg, text='Label Font:').grid(row=row, column=0, sticky='e', padx=6, pady=6)
+            fs = tk.Scale(dlg, from_=6, to=32, orient='horizontal', variable=self.font_size_var, command=lambda v: self._set_label_font_size(v))
+            fs.grid(row=row, column=1, columnspan=2, sticky='ew', padx=6)
+
+            # Close button
+            row += 1
+            btnf = tk.Frame(dlg)
+            btnf.grid(row=row, column=0, columnspan=3, pady=(8,10))
+            Button(btnf, text='Close', command=dlg.destroy).pack()
+
+            dlg.update_idletasks()
+            try:
+                x = self.master.winfo_rootx() + (self.master.winfo_width() - dlg.winfo_width()) // 2
+                y = self.master.winfo_rooty() + (self.master.winfo_height() - dlg.winfo_height()) // 2
+                dlg.geometry(f'+{x}+{y}')
+            except Exception:
+                pass
+        except Exception:
+            return
+
     def save_config(self):
         with open(self.config_file, 'w') as f:
             self.config.write(f)
@@ -1046,7 +2389,17 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             mat = fitz.Matrix(self.zoom_level, self.zoom_level)
             pix = page.get_pixmap(matrix=mat)
             img_data = pix.tobytes("ppm")
-            self.photo_image = ImageTk.PhotoImage(Image.open(io.BytesIO(img_data)))
+            # create a PIL image and cache it for fast preview resizing during interactive zoom
+            try:
+                pil_img = Image.open(io.BytesIO(img_data)).convert('RGBA')
+                self._last_rendered_pil = pil_img
+                self.photo_image = ImageTk.PhotoImage(pil_img)
+            except Exception:
+                # fallback: keep previous photo_image if any
+                try:
+                    self.photo_image = ImageTk.PhotoImage(Image.open(io.BytesIO(img_data)))
+                except Exception:
+                    pass
             self.canvas.delete("all")
             self.canvas_image = self.canvas.create_image(0, 0, anchor="nw", image=self.photo_image)
             self.redraw_markers()
@@ -1072,23 +2425,93 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         y_scroll = self.canvas.canvasy(y)
         x_pdf = x_scroll / old_zoom
         y_pdf = y_scroll / old_zoom
-        self.zoom_level *= zoom_factor
-        self.display_page()
-        img_width = self.photo_image.width()
-        img_height = self.photo_image.height()
-        x_scroll_new = x_pdf * self.zoom_level
-        y_scroll_new = y_pdf * self.zoom_level
-        frac_x = (x_scroll_new - x) / img_width if img_width > 0 else 0
-        frac_y = (y_scroll_new - y) / img_height if img_height > 0 else 0
-        frac_x = max(0, min(1, frac_x))
-        frac_y = max(0, min(1, frac_y))
-        self.canvas.xview_moveto(frac_x)
-        self.canvas.yview_moveto(frac_y)
+        new_zoom = self.zoom_level * zoom_factor
+
+        # Quick preview: if we have a cached PIL image for the page, resize it quickly
+        try:
+            pil = getattr(self, '_last_rendered_pil', None)
+            if pil is not None:
+                # Compute scale relative to last rendered PIL (which represents current zoom)
+                try:
+                    scale = new_zoom / old_zoom if old_zoom != 0 else 1.0
+                except Exception:
+                    scale = 1.0
+                try:
+                    new_w = max(1, int(pil.width * scale))
+                    new_h = max(1, int(pil.height * scale))
+                    preview = pil.resize((new_w, new_h), resample=Image.BILINEAR)
+                    self.photo_image = ImageTk.PhotoImage(preview)
+                    if self.canvas_image:
+                        try:
+                            self.canvas.itemconfig(self.canvas_image, image=self.photo_image)
+                        except Exception:
+                            self.canvas_image = self.canvas.create_image(0, 0, anchor='nw', image=self.photo_image)
+                    else:
+                        self.canvas_image = self.canvas.create_image(0, 0, anchor='nw', image=self.photo_image)
+                    # adjust scrollregion to preview size
+                    try:
+                        self.canvas.config(scrollregion=(0, 0, new_w, new_h))
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Schedule a full quality render after a short debounce interval
+        self._pending_zoom_pdf_coords = (x_pdf, y_pdf)
+        self._pending_zoom_level = new_zoom
+        # cancel previous job
+        try:
+            if getattr(self, '_zoom_render_job', None):
+                self.master.after_cancel(self._zoom_render_job)
+        except Exception:
+            pass
+        try:
+            # schedule final render after 250ms of no further zoom events
+            self._zoom_render_job = self.master.after(250, self._do_full_zoom_render)
+        except Exception:
+            # fallback to immediate render
+            try:
+                self._do_full_zoom_render()
+            except Exception:
+                pass
 
     def redraw_markers(self):
+        # Remove existing canvas items for our element tags so redraw reflects size/font changes
+        try:
+            self.canvas.delete("user_point")
+        except Exception:
+            pass
+        try:
+            self.canvas.delete("point_label")
+        except Exception:
+            pass
+        try:
+            self.canvas.delete("user_line")
+        except Exception:
+            pass
+        try:
+            self.canvas.delete("line_label")
+        except Exception:
+            pass
+        try:
+            self.canvas.delete("user_curve")
+        except Exception:
+            pass
+        try:
+            self.canvas.delete("arc_point")
+        except Exception:
+            pass
+        try:
+            self.canvas.delete("calibration_point")
+        except Exception:
+            pass
+
         self.point_markers.clear()
+        self.point_labels.clear()
         self.calibration_markers.clear()
-        size = 5
+        size = getattr(self, 'point_marker_size', 5)
 
         for i, (px, py) in enumerate(self.reference_points_pdf):
             x = px * self.zoom_level
@@ -1101,9 +2524,35 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             if 'pdf_x' in point and 'pdf_y' in point:
                 x = point['pdf_x'] * self.zoom_level
                 y = point['pdf_y'] * self.zoom_level
+                clr = getattr(self, 'point_color_2d', 'blue')
                 m_id = self.canvas.create_oval(x - size, y - size, x + size, y + size,
-                                              outline="blue", fill="blue", tags="user_point", width=2)
+                                              outline=clr, fill=clr, tags="user_point", width=2)
                 self.point_markers[point['id']] = m_id
+                # create or update a label for the point id
+                # always compute a safe label font size (at least 1)
+                lbl_size = max(1, int(getattr(self, 'label_font_size', 10) or 10))
+                text_x = x + (size + 6)
+                text_y = y - (size + 2)
+                # if a previous text canvas id exists, remove it to avoid stale references
+                try:
+                    old_tid = point.get('text_id') or self.point_labels.get(point['id'])
+                    if old_tid:
+                        try:
+                            self.canvas.delete(old_tid)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                # create a fresh label with the current font size
+                try:
+                    t_id = self.canvas.create_text(text_x, text_y, text=str(point['id']), fill=clr, tags="point_label", font=("Helvetica", lbl_size))
+                    self.point_labels[point['id']] = t_id
+                    try:
+                        point['text_id'] = t_id
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
 
         for line in self.lines:
             start = next(p for p in self.user_points if p['id'] == line['start_id'])
@@ -1112,7 +2561,9 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             y1 = start['pdf_y'] * self.zoom_level
             x2 = end['pdf_x'] * self.zoom_level
             y2 = end['pdf_y'] * self.zoom_level
-            line_id = self.canvas.create_line(x1, y1, x2, y2, fill="orange", width=4, tags="user_line")
+            lw = getattr(self, 'line_width_2d', 4)
+            lclr = getattr(self, 'line_color_2d', 'orange')
+            line_id = self.canvas.create_line(x1, y1, x2, y2, fill=lclr, width=lw, tags="user_line")
             if 'canvas_id' in line:
                 try:
                     self.canvas.delete(line['canvas_id'])
@@ -1123,17 +2574,31 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             mid_y = (y1 + y2) / 2
             text_offset = 15
             text_y = mid_y - text_offset if y1 < y2 else mid_y + text_offset
-            if 'text_id' in line:
-                self.canvas.coords(line['text_id'], mid_x, text_y)
-            else:
-                text_id = self.canvas.create_text(mid_x, text_y, text=str(line['id']), fill="orange", tags="line_label")
-                line['text_id'] = text_id
+            # robust text label handling: treat falsy or missing text_id as absent
+            # always recreate line label to ensure font/position are correct
+            try:
+                old_tid = line.get('text_id')
+                if old_tid:
+                    try:
+                        self.canvas.delete(old_tid)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            try:
+                lbl_size = max(1, int(getattr(self, 'label_font_size', 12) or 12))
+                t_id = self.canvas.create_text(mid_x, text_y, text=str(line['id']), fill=lclr, tags="line_label", font=("Helvetica", lbl_size))
+                line['text_id'] = t_id
+            except Exception:
+                pass
 
         for curve in self.curves:
             coords = []
             for px, py in curve['arc_points_pdf']:
                 coords.extend([px * self.zoom_level, py * self.zoom_level])
-            curve_id = self.canvas.create_line(*coords, fill="purple", width=2, smooth=True, splinesteps=36, tags="user_curve")
+            cwidth = getattr(self, 'curve_width_2d', 2)
+            cclr = getattr(self, 'curve_color_2d', 'purple')
+            curve_id = self.canvas.create_line(*coords, fill=cclr, width=cwidth, smooth=True, splinesteps=36, tags="user_curve")
             if 'canvas_id' in curve:
                 try:
                     self.canvas.delete(curve['canvas_id'])
@@ -1146,7 +2611,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 x = px * self.zoom_level
                 y = py * self.zoom_level
                 marker_id = self.canvas.create_oval(x - size, y - size, x + size, y + size,
-                                                   outline="green", fill="green", tags="arc_point", width=2)
+                                                   outline=cclr, fill=cclr, tags="arc_point", width=2)
                 curve['arc_point_marker_ids'].append(marker_id)
 
         self.canvas.tag_raise("calibration_point")
@@ -1164,6 +2629,37 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         try:
             # update_3d_plot will initialize 3D canvas lazily if needed
             self.update_3d_plot()
+        except Exception:
+            pass
+
+    # --- Display setters used by the sliders ---
+    def _set_point_size(self, v):
+        try:
+            self.point_marker_size = int(float(v))
+        except Exception:
+            return
+        try:
+            self.redraw_markers()
+        except Exception:
+            pass
+
+    def _set_line_width(self, v):
+        try:
+            self.line_width_2d = int(float(v))
+        except Exception:
+            return
+        try:
+            self.redraw_markers()
+        except Exception:
+            pass
+
+    def _set_label_font_size(self, v):
+        try:
+            self.label_font_size = int(float(v))
+        except Exception:
+            return
+        try:
+            self.redraw_markers()
         except Exception:
             pass
 
@@ -1282,6 +2778,29 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             self.handle_curves_click(canvas_x, canvas_y)
         elif mode == "duplication":
             self.handle_duplication_click(event)
+        elif mode == "identify":
+            # Identify multiple nearby items at this location and present details
+            try:
+                candidates = self.find_items_near(pdf_x, pdf_y)
+            except Exception:
+                candidates = None
+            if not candidates:
+                self.update_status("No nearby items found")
+                return
+            # Build a readable listing
+            lines = []
+            for kind, item, dist in candidates:
+                if kind == 'point':
+                    lines.append(f"Point id={item.get('id')} pdf=({item.get('pdf_x')},{item.get('pdf_y')}) z={item.get('z', '')}")
+                elif kind == 'line':
+                    lines.append(f"Line id={item.get('id')} start={item.get('start_id')} end={item.get('end_id')}")
+                else:
+                    lines.append(f"Curve id={item.get('id')} z={item.get('z_level', item.get('z',''))} arc_points={len(item.get('arc_point_ids',[]))}")
+            try:
+                from tkinter import messagebox
+                messagebox.showinfo("Identify Results", "\n".join(lines))
+            except Exception:
+                self.update_status("Identified: " + "; ".join(lines))
         else:
             self.update_status(f"Unknown mode: {mode}")
 
@@ -1307,6 +2826,24 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             "zoom_level": self.zoom_level,
             "last_mode": self.mode_var.get()
         }
+        # Include display settings so project remembers user's visual choices
+        try:
+            project_data['display'] = {
+                'point_color_2d': getattr(self, 'point_color_2d', None),
+                'line_color_2d': getattr(self, 'line_color_2d', None),
+                'curve_color_2d': getattr(self, 'curve_color_2d', None),
+                'point_marker_size': getattr(self, 'point_marker_size', None),
+                'line_width_2d': getattr(self, 'line_width_2d', None),
+                'curve_width_2d': getattr(self, 'curve_width_2d', None),
+                'label_font_size': getattr(self, 'label_font_size', None),
+                # also persist 3D preferences where useful
+                '3d_point_size': getattr(self, '_3d_point_size', None),
+                '3d_point_color': getattr(self, '_3d_point_color', None),
+                '3d_line_color': getattr(self, '_3d_line_color', None),
+                '3d_curve_color': getattr(self, '_3d_curve_color', None),
+            }
+        except Exception:
+            pass
         # include allocator counters if available
         try:
             if self.allocator is not None:
@@ -1376,21 +2913,83 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             self.lines = project_data.get("lines", [])
             self.curves = project_data.get("curves", [])
             self.zoom_level = project_data.get("zoom_level", 1.0)
+            # Restore display settings if present
+            try:
+                dsp = project_data.get('display', {}) or {}
+                if 'point_color_2d' in dsp and dsp['point_color_2d']:
+                    self.point_color_2d = dsp['point_color_2d']
+                if 'line_color_2d' in dsp and dsp['line_color_2d']:
+                    self.line_color_2d = dsp['line_color_2d']
+                if 'curve_color_2d' in dsp and dsp['curve_color_2d']:
+                    self.curve_color_2d = dsp['curve_color_2d']
+                if 'point_marker_size' in dsp and dsp['point_marker_size'] is not None:
+                    try:
+                        self.point_marker_size = int(dsp['point_marker_size'])
+                        self.point_size_var.set(self.point_marker_size)
+                    except Exception:
+                        pass
+                if 'line_width_2d' in dsp and dsp['line_width_2d'] is not None:
+                    try:
+                        self.line_width_2d = int(dsp['line_width_2d'])
+                        self.line_width_var.set(self.line_width_2d)
+                    except Exception:
+                        pass
+                if 'curve_width_2d' in dsp and dsp['curve_width_2d'] is not None:
+                    try:
+                        self.curve_width_2d = int(dsp['curve_width_2d'])
+                    except Exception:
+                        pass
+                if 'label_font_size' in dsp and dsp['label_font_size'] is not None:
+                    try:
+                        self.label_font_size = int(dsp['label_font_size'])
+                        self.font_size_var.set(self.label_font_size)
+                    except Exception:
+                        pass
+                # 3D prefs
+                if '3d_point_size' in dsp and dsp['3d_point_size'] is not None:
+                    try:
+                        self._3d_point_size = int(dsp['3d_point_size'])
+                    except Exception:
+                        pass
+                if '3d_point_color' in dsp and dsp['3d_point_color']:
+                    try:
+                        self._3d_point_color = dsp['3d_point_color']
+                    except Exception:
+                        pass
+                if '3d_line_color' in dsp and dsp['3d_line_color']:
+                    try:
+                        self._3d_line_color = dsp['3d_line_color']
+                    except Exception:
+                        pass
+                if '3d_curve_color' in dsp and dsp['3d_curve_color']:
+                    try:
+                        self._3d_curve_color = dsp['3d_curve_color']
+                    except Exception:
+                        pass
+                # update swatches if the UI exists
+                try:
+                    if hasattr(self, 'point_color_swatch') and self.point_color_swatch is not None:
+                        self.point_color_swatch.config(bg=self.point_color_2d)
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self, 'line_color_swatch') and self.line_color_swatch is not None:
+                        self.line_color_swatch.config(bg=self.line_color_2d)
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self, 'curve_color_swatch') and self.curve_color_swatch is not None:
+                        self.curve_color_swatch.config(bg=self.curve_color_2d)
+                except Exception:
+                    pass
+            except Exception:
+                pass
             if self.zoom_entry:
                 self.zoom_entry.delete(0, tk.END)
                 self.zoom_entry.insert(0, f"{self.zoom_level*100:.0f}")
             self.display_page()
             self.update_points_label()
-            # Ensure point_id_counter continues from allocator if available
-            try:
-                if self.allocator is not None:
-                    # keep point_id_counter in sync for legacy code paths
-                    self.point_id_counter = max(self.point_id_counter, int(getattr(self.allocator, 'point_counter', self.point_id_counter)))
-                else:
-                    max_id = max((p.get('id', 0) for p in self.user_points), default=0)
-                    self.point_id_counter = max(self.point_id_counter, max_id + 1)
-            except Exception:
-                pass
+            # ID counters are deterministic via next_* helpers; no legacy counter sync required
 
             # Refresh editor lists and 3D view to reflect loaded project
             try:
@@ -1405,6 +3004,36 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             last_mode = project_data.get("last_mode", "coordinates")
             self.mode_var.set(last_mode)
             self.set_mode(last_mode)
+            # Force immediate redraw of calibration points and IDs so they appear right after loading
+            try:
+                self.redraw_markers()
+            except Exception:
+                pass
+            try:
+                self.refresh_editor_lists()
+            except Exception:
+                pass
+            try:
+                # Ensure canvas refresh
+                if self.canvas is not None:
+                    try:
+                        self.canvas.update_idletasks()
+                        self.canvas.update()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            try:
+                if hasattr(self, '_3d_canvas') and self._3d_canvas is not None:
+                    try:
+                        self._3d_canvas.draw_idle()
+                    except Exception:
+                        try:
+                            self._3d_canvas.draw()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
         except Exception as e:
             messagebox.showerror("Load Error", f"Error loading project: {e}")
 
@@ -1603,6 +3232,12 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         with open(sql_file, 'w') as f:
             f.write("-- SQL Insert Script for SeasPathDB\n")
             f.write("-- Generated from 3DMaker Export\n\n")
+
+            # Remove existing data first (Curves, Lines, Points)
+            f.write("-- Clear existing data (order: Curves, Lines, Points)\n")
+            f.write("DELETE FROM SeasPathDB.dbo.Visualization_Curve;\n")
+            f.write("DELETE FROM SeasPathDB.dbo.Visualization_Edge;\n")
+            f.write("DELETE FROM SeasPathDB.dbo.Visualization_Coordinate;\n\n")
 
             # Points table
             f.write("-- Insert Visualization_Coordinate (Points)\n")

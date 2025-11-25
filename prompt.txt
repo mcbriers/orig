@@ -1,0 +1,20 @@
+I have a Python/Tkinter project located at c:\temp\3DMaker\orig. It's a PDF digitizer/track-definition tool with a 2D PDF viewer, an embedded Matplotlib 3D view, and an Editor tab with three Treeviews for Points/Lines/Curves. Key behaviors:
+- Points have `id`, `pdf_x`, `pdf_y`, `real_x`, `real_y`, `z`, and `hidden`.
+- Lines have `id`, `start_id`, `end_id`, `canvas/text ids`, and `hidden`.
+- Curves keep `arc_point_ids`, `arc_points_pdf`, `arc_points_real`, `z_level`, `start_id`, `end_id`, and `base_line_id`. Export enforces exactly N positions per curve (N = interior + 2).
+- ID allocation uses a centralized `IDAllocator` (if present) with app wrappers: `next_point_id()`, `next_line_id()`, `next_curve_id()`.
+- Editor: inline cell editing (double-click), multi-select, Hide/Show toggle, multi-delete, and a context-menu command `Reassign References...`.
+- Z-edit conflicts: editing a point's Z at an XY where other points exist creates a duplicate point with the new Z. Reassignment of references is manual via `Reassign References`.
+- Display settings (2D colors, sizes, label font size and 3D prefs) are saved in project JSON under `"display"` and restored on load. Color swatches next to chooser buttons show current color.
+- `app.py`, `points_lines.py`, `curves.py`, `deletion.py`, and `digitizer/*` are the main files.
+
+Please:
+1. Read and summarize the most critical files and functions for finishing "Reassign References" UI improvements (dropdown chooser + preview of affected lines/curves).
+2. Make a focused plan with tasks I can approve to implement the dropdown dialog (show candidate points with coords/Z, preview list of affected lines/curves, confirm or cancel). Use the repo structure above and propose minimal UI/logic changes.
+3. If you implement changes, run a full syntax check and report any issues. Provide the exact commands you ran to test locally.
+
+If you need to run code, assume the environment has Python 3.13, Tkinter, PyMuPDF, Pillow, numpy, and matplotlib available. Point me to any other dependencies or files you need to inspect.
+
+---
+
+If you want, implement the dropdown `Reassign References` UI and preview now: say "yes, implement the dropdown" and proceed.
