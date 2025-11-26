@@ -37,14 +37,2099 @@
             1.0
         ]
     ],
-    "points": [],
-    "lines": [],
+    "points": [
+        {
+            "id": 1,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 570.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 838
+        },
+        {
+            "id": 2,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 570.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 840
+        },
+        {
+            "id": 3,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 570.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 842
+        },
+        {
+            "id": 4,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 570.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 844
+        },
+        {
+            "id": 5,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 570.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 846
+        },
+        {
+            "id": 6,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 570,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 848
+        },
+        {
+            "id": 7,
+            "real_x": 98134,
+            "real_y": 39168,
+            "z": 0,
+            "hidden": false,
+            "pdf_x": 2534.7222222222226,
+            "pdf_y": 1162.326388888889,
+            "description": "3D Visualisation",
+            "text_id": 850
+        },
+        {
+            "id": 8,
+            "real_x": 99654,
+            "real_y": 40651,
+            "z": 0,
+            "hidden": false,
+            "pdf_x": 2534.7222222222226,
+            "pdf_y": 1394.9652777777778,
+            "description": "3D Visualisation",
+            "text_id": 852
+        },
+        {
+            "id": 9,
+            "real_x": 101203,
+            "real_y": 42129,
+            "z": 0,
+            "hidden": false,
+            "pdf_x": 2537.326388888889,
+            "pdf_y": 1629.3402777777778,
+            "description": "3D Visualisation",
+            "text_id": 854
+        },
+        {
+            "id": 10,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 0.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 856
+        },
+        {
+            "id": 11,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 0.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 858
+        },
+        {
+            "id": 12,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 0.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 860
+        },
+        {
+            "id": 13,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 920.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 862
+        },
+        {
+            "id": 14,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 920.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 864
+        },
+        {
+            "id": 15,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 1270.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 866
+        },
+        {
+            "id": 16,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 1270.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 868
+        },
+        {
+            "id": 17,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 1620.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 870
+        },
+        {
+            "id": 18,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 1620.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 872
+        },
+        {
+            "id": 19,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 1970.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 874
+        },
+        {
+            "id": 20,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 1970.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 876
+        },
+        {
+            "id": 21,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 2620.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 878
+        },
+        {
+            "id": 22,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 2620.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 880
+        },
+        {
+            "id": 23,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 2970.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 882
+        },
+        {
+            "id": 24,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 2970.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 884
+        },
+        {
+            "id": 25,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 3320.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 886
+        },
+        {
+            "id": 26,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 3320.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 888
+        },
+        {
+            "id": 27,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 3670.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 890
+        },
+        {
+            "id": 28,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 3670.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 892
+        },
+        {
+            "id": 29,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 4020.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 894
+        },
+        {
+            "id": 30,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 4020.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 896
+        },
+        {
+            "id": 31,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 4370.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 898
+        },
+        {
+            "id": 32,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 4370.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 900
+        },
+        {
+            "id": 33,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 5020.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 902
+        },
+        {
+            "id": 34,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 5020.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 904
+        },
+        {
+            "id": 35,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 5445.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 906
+        },
+        {
+            "id": 36,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 5445.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 908
+        },
+        {
+            "id": 37,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 5870.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 910
+        },
+        {
+            "id": 38,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 5870.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 912
+        },
+        {
+            "id": 39,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 6295.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 914
+        },
+        {
+            "id": 40,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 6295.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 916
+        },
+        {
+            "id": 41,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 6720.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 918
+        },
+        {
+            "id": 42,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 6720.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 920
+        },
+        {
+            "id": 43,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 7370.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 922
+        },
+        {
+            "id": 44,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 7370.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 924
+        },
+        {
+            "id": 45,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 7795.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 926
+        },
+        {
+            "id": 46,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 7795.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 928
+        },
+        {
+            "id": 47,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 8220.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 930
+        },
+        {
+            "id": 48,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 8220.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 932
+        },
+        {
+            "id": 49,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 8645.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 934
+        },
+        {
+            "id": 50,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 8645.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 936
+        },
+        {
+            "id": 51,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 9070.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 938
+        },
+        {
+            "id": 52,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 9070.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 940
+        },
+        {
+            "id": 53,
+            "real_x": 85666,
+            "real_y": 51941,
+            "z": 9700.0,
+            "hidden": false,
+            "pdf_x": 579.8611111111111,
+            "pdf_y": 1161.8055555555557,
+            "description": "3D Visualisation",
+            "text_id": 942
+        },
+        {
+            "id": 54,
+            "real_x": 96386,
+            "real_y": 40971,
+            "z": 9700.0,
+            "hidden": false,
+            "pdf_x": 2259.722222222222,
+            "pdf_y": 1163.1944444444446,
+            "description": "3D Visualisation",
+            "text_id": 944
+        },
+        {
+            "id": 55,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 920.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 946
+        },
+        {
+            "id": 56,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 920.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 948
+        },
+        {
+            "id": 57,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 1270.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 950
+        },
+        {
+            "id": 58,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 1270.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 952
+        },
+        {
+            "id": 59,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 1620.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 954
+        },
+        {
+            "id": 60,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 1620.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 956
+        },
+        {
+            "id": 61,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 1970.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 958
+        },
+        {
+            "id": 62,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 1970.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 960
+        },
+        {
+            "id": 63,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 2620.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 962
+        },
+        {
+            "id": 64,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 2620.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 964
+        },
+        {
+            "id": 65,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 2970.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 966
+        },
+        {
+            "id": 66,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 2970.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 968
+        },
+        {
+            "id": 67,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 3320.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 970
+        },
+        {
+            "id": 68,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 3320.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 972
+        },
+        {
+            "id": 69,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 3670.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 974
+        },
+        {
+            "id": 70,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 3670.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 976
+        },
+        {
+            "id": 71,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 4020.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 978
+        },
+        {
+            "id": 72,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 4020.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 980
+        },
+        {
+            "id": 73,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 4370.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 982
+        },
+        {
+            "id": 74,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 4370.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 984
+        },
+        {
+            "id": 75,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 5020.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 986
+        },
+        {
+            "id": 76,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 5020.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 988
+        },
+        {
+            "id": 77,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 5445.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 990
+        },
+        {
+            "id": 78,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 5445.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 992
+        },
+        {
+            "id": 79,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 5870.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 994
+        },
+        {
+            "id": 80,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 5870.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 996
+        },
+        {
+            "id": 81,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 6295.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 998
+        },
+        {
+            "id": 82,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 6295.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 1000
+        },
+        {
+            "id": 83,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 6720.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 1002
+        },
+        {
+            "id": 84,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 6720.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 1004
+        },
+        {
+            "id": 85,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 7370.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 1006
+        },
+        {
+            "id": 86,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 7370.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 1008
+        },
+        {
+            "id": 87,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 7795.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 1010
+        },
+        {
+            "id": 88,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 7795.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 1012
+        },
+        {
+            "id": 89,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 8220.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 1014
+        },
+        {
+            "id": 90,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 8220.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 1016
+        },
+        {
+            "id": 91,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 8645.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 1018
+        },
+        {
+            "id": 92,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 8645.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 1020
+        },
+        {
+            "id": 93,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 9070.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 1022
+        },
+        {
+            "id": 94,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 9070.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 1024
+        },
+        {
+            "id": 95,
+            "real_x": 87244,
+            "real_y": 53419,
+            "z": 9700.0,
+            "hidden": false,
+            "pdf_x": 584.7222222222223,
+            "pdf_y": 1398.611111111111,
+            "description": "3D Visualisation",
+            "text_id": 1026
+        },
+        {
+            "id": 96,
+            "real_x": 97933,
+            "real_y": 42454,
+            "z": 9700.0,
+            "hidden": false,
+            "pdf_x": 2261.8055555555557,
+            "pdf_y": 1397.9166666666667,
+            "description": "3D Visualisation",
+            "text_id": 1028
+        },
+        {
+            "id": 97,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 920.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1030
+        },
+        {
+            "id": 98,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 920.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1032
+        },
+        {
+            "id": 99,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 1270.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1034
+        },
+        {
+            "id": 100,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 1270.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1036
+        },
+        {
+            "id": 101,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 1620.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1038
+        },
+        {
+            "id": 102,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 1620.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1040
+        },
+        {
+            "id": 103,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 1970.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1042
+        },
+        {
+            "id": 104,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 1970.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1044
+        },
+        {
+            "id": 105,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 2620.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1046
+        },
+        {
+            "id": 106,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 2620.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1048
+        },
+        {
+            "id": 107,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 2970.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1050
+        },
+        {
+            "id": 108,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 2970.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1052
+        },
+        {
+            "id": 109,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 3320.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1054
+        },
+        {
+            "id": 110,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 3320.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1056
+        },
+        {
+            "id": 111,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 3670.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1058
+        },
+        {
+            "id": 112,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 3670.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1060
+        },
+        {
+            "id": 113,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 4020.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1062
+        },
+        {
+            "id": 114,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 4020.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1064
+        },
+        {
+            "id": 115,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 4370.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1066
+        },
+        {
+            "id": 116,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 4370.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1068
+        },
+        {
+            "id": 117,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 5020.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1070
+        },
+        {
+            "id": 118,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 5020.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1072
+        },
+        {
+            "id": 119,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 5445.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1074
+        },
+        {
+            "id": 120,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 5445.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1076
+        },
+        {
+            "id": 121,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 5870.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1078
+        },
+        {
+            "id": 122,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 5870.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1080
+        },
+        {
+            "id": 123,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 6295.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1082
+        },
+        {
+            "id": 124,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 6295.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1084
+        },
+        {
+            "id": 125,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 6720.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1086
+        },
+        {
+            "id": 126,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 6720.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1088
+        },
+        {
+            "id": 127,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 7370.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1090
+        },
+        {
+            "id": 128,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 7370.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1092
+        },
+        {
+            "id": 129,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 7795.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1094
+        },
+        {
+            "id": 130,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 7795.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1096
+        },
+        {
+            "id": 131,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 8220.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1098
+        },
+        {
+            "id": 132,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 8220.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1100
+        },
+        {
+            "id": 133,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 8645.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1102
+        },
+        {
+            "id": 134,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 8645.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1104
+        },
+        {
+            "id": 135,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 9070.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1106
+        },
+        {
+            "id": 136,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 9070.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1108
+        },
+        {
+            "id": 137,
+            "real_x": 88765,
+            "real_y": 54929,
+            "z": 9700.0,
+            "hidden": false,
+            "pdf_x": 582.6388888888889,
+            "pdf_y": 1633.3333333333335,
+            "description": "3D Visualisation",
+            "text_id": 1110
+        },
+        {
+            "id": 138,
+            "real_x": 99481,
+            "real_y": 43955,
+            "z": 9700.0,
+            "hidden": false,
+            "pdf_x": 2262.5,
+            "pdf_y": 1634.0277777777778,
+            "description": "3D Visualisation",
+            "text_id": 1112
+        }
+    ],
+    "lines": [
+        {
+            "id": 1,
+            "start_id": 1,
+            "end_id": 4,
+            "canvas_id": 1113,
+            "hidden": false,
+            "text_id": 1114
+        },
+        {
+            "id": 2,
+            "start_id": 2,
+            "end_id": 5,
+            "canvas_id": 1115,
+            "hidden": false,
+            "text_id": 1116
+        },
+        {
+            "id": 3,
+            "start_id": 3,
+            "end_id": 6,
+            "canvas_id": 1117,
+            "hidden": false,
+            "text_id": 1118
+        },
+        {
+            "id": 4,
+            "start_id": 10,
+            "end_id": 7,
+            "canvas_id": 1119,
+            "hidden": false,
+            "text_id": 1120
+        },
+        {
+            "id": 5,
+            "start_id": 11,
+            "end_id": 8,
+            "canvas_id": 1121,
+            "hidden": false,
+            "text_id": 1122
+        },
+        {
+            "id": 6,
+            "start_id": 12,
+            "end_id": 9,
+            "canvas_id": 1123,
+            "hidden": false,
+            "text_id": 1124
+        },
+        {
+            "id": 7,
+            "start_id": 13,
+            "end_id": 14,
+            "canvas_id": 1125,
+            "hidden": false,
+            "text_id": 1126
+        },
+        {
+            "id": 8,
+            "start_id": 15,
+            "end_id": 16,
+            "canvas_id": 1127,
+            "hidden": false,
+            "text_id": 1128
+        },
+        {
+            "id": 9,
+            "start_id": 17,
+            "end_id": 18,
+            "canvas_id": 1129,
+            "hidden": false,
+            "text_id": 1130
+        },
+        {
+            "id": 10,
+            "start_id": 19,
+            "end_id": 20,
+            "canvas_id": 1131,
+            "hidden": false,
+            "text_id": 1132
+        },
+        {
+            "id": 11,
+            "start_id": 21,
+            "end_id": 22,
+            "canvas_id": 1133,
+            "hidden": false,
+            "text_id": 1134
+        },
+        {
+            "id": 12,
+            "start_id": 23,
+            "end_id": 24,
+            "canvas_id": 1135,
+            "hidden": false,
+            "text_id": 1136
+        },
+        {
+            "id": 13,
+            "start_id": 25,
+            "end_id": 26,
+            "canvas_id": 1137,
+            "hidden": false,
+            "text_id": 1138
+        },
+        {
+            "id": 14,
+            "start_id": 27,
+            "end_id": 28,
+            "canvas_id": 1139,
+            "hidden": false,
+            "text_id": 1140
+        },
+        {
+            "id": 15,
+            "start_id": 29,
+            "end_id": 30,
+            "canvas_id": 1141,
+            "hidden": false,
+            "text_id": 1142
+        },
+        {
+            "id": 16,
+            "start_id": 31,
+            "end_id": 32,
+            "canvas_id": 1143,
+            "hidden": false,
+            "text_id": 1144
+        },
+        {
+            "id": 17,
+            "start_id": 33,
+            "end_id": 34,
+            "canvas_id": 1145,
+            "hidden": false,
+            "text_id": 1146
+        },
+        {
+            "id": 18,
+            "start_id": 35,
+            "end_id": 36,
+            "canvas_id": 1147,
+            "hidden": false,
+            "text_id": 1148
+        },
+        {
+            "id": 19,
+            "start_id": 37,
+            "end_id": 38,
+            "canvas_id": 1149,
+            "hidden": false,
+            "text_id": 1150
+        },
+        {
+            "id": 20,
+            "start_id": 39,
+            "end_id": 40,
+            "canvas_id": 1151,
+            "hidden": false,
+            "text_id": 1152
+        },
+        {
+            "id": 21,
+            "start_id": 41,
+            "end_id": 42,
+            "canvas_id": 1153,
+            "hidden": false,
+            "text_id": 1154
+        },
+        {
+            "id": 22,
+            "start_id": 43,
+            "end_id": 44,
+            "canvas_id": 1155,
+            "hidden": false,
+            "text_id": 1156
+        },
+        {
+            "id": 23,
+            "start_id": 45,
+            "end_id": 46,
+            "canvas_id": 1157,
+            "hidden": false,
+            "text_id": 1158
+        },
+        {
+            "id": 24,
+            "start_id": 47,
+            "end_id": 48,
+            "canvas_id": 1159,
+            "hidden": false,
+            "text_id": 1160
+        },
+        {
+            "id": 25,
+            "start_id": 49,
+            "end_id": 50,
+            "canvas_id": 1161,
+            "hidden": false,
+            "text_id": 1162
+        },
+        {
+            "id": 26,
+            "start_id": 51,
+            "end_id": 52,
+            "canvas_id": 1163,
+            "hidden": false,
+            "text_id": 1164
+        },
+        {
+            "id": 27,
+            "start_id": 53,
+            "end_id": 54,
+            "canvas_id": 1165,
+            "hidden": false,
+            "text_id": 1166
+        },
+        {
+            "id": 28,
+            "start_id": 55,
+            "end_id": 56,
+            "canvas_id": 1167,
+            "hidden": false,
+            "text_id": 1168
+        },
+        {
+            "id": 29,
+            "start_id": 57,
+            "end_id": 58,
+            "canvas_id": 1169,
+            "hidden": false,
+            "text_id": 1170
+        },
+        {
+            "id": 30,
+            "start_id": 59,
+            "end_id": 60,
+            "canvas_id": 1171,
+            "hidden": false,
+            "text_id": 1172
+        },
+        {
+            "id": 31,
+            "start_id": 61,
+            "end_id": 62,
+            "canvas_id": 1173,
+            "hidden": false,
+            "text_id": 1174
+        },
+        {
+            "id": 32,
+            "start_id": 63,
+            "end_id": 64,
+            "canvas_id": 1175,
+            "hidden": false,
+            "text_id": 1176
+        },
+        {
+            "id": 33,
+            "start_id": 65,
+            "end_id": 66,
+            "canvas_id": 1177,
+            "hidden": false,
+            "text_id": 1178
+        },
+        {
+            "id": 34,
+            "start_id": 67,
+            "end_id": 68,
+            "canvas_id": 1179,
+            "hidden": false,
+            "text_id": 1180
+        },
+        {
+            "id": 35,
+            "start_id": 69,
+            "end_id": 70,
+            "canvas_id": 1181,
+            "hidden": false,
+            "text_id": 1182
+        },
+        {
+            "id": 36,
+            "start_id": 71,
+            "end_id": 72,
+            "canvas_id": 1183,
+            "hidden": false,
+            "text_id": 1184
+        },
+        {
+            "id": 37,
+            "start_id": 73,
+            "end_id": 74,
+            "canvas_id": 1185,
+            "hidden": false,
+            "text_id": 1186
+        },
+        {
+            "id": 38,
+            "start_id": 75,
+            "end_id": 76,
+            "canvas_id": 1187,
+            "hidden": false,
+            "text_id": 1188
+        },
+        {
+            "id": 39,
+            "start_id": 77,
+            "end_id": 78,
+            "canvas_id": 1189,
+            "hidden": false,
+            "text_id": 1190
+        },
+        {
+            "id": 40,
+            "start_id": 79,
+            "end_id": 80,
+            "canvas_id": 1191,
+            "hidden": false,
+            "text_id": 1192
+        },
+        {
+            "id": 41,
+            "start_id": 81,
+            "end_id": 82,
+            "canvas_id": 1193,
+            "hidden": false,
+            "text_id": 1194
+        },
+        {
+            "id": 42,
+            "start_id": 83,
+            "end_id": 84,
+            "canvas_id": 1195,
+            "hidden": false,
+            "text_id": 1196
+        },
+        {
+            "id": 43,
+            "start_id": 85,
+            "end_id": 86,
+            "canvas_id": 1197,
+            "hidden": false,
+            "text_id": 1198
+        },
+        {
+            "id": 44,
+            "start_id": 87,
+            "end_id": 88,
+            "canvas_id": 1199,
+            "hidden": false,
+            "text_id": 1200
+        },
+        {
+            "id": 45,
+            "start_id": 89,
+            "end_id": 90,
+            "canvas_id": 1201,
+            "hidden": false,
+            "text_id": 1202
+        },
+        {
+            "id": 46,
+            "start_id": 91,
+            "end_id": 92,
+            "canvas_id": 1203,
+            "hidden": false,
+            "text_id": 1204
+        },
+        {
+            "id": 47,
+            "start_id": 93,
+            "end_id": 94,
+            "canvas_id": 1205,
+            "hidden": false,
+            "text_id": 1206
+        },
+        {
+            "id": 48,
+            "start_id": 95,
+            "end_id": 96,
+            "canvas_id": 1207,
+            "hidden": false,
+            "text_id": 1208
+        },
+        {
+            "id": 49,
+            "start_id": 97,
+            "end_id": 98,
+            "canvas_id": 1209,
+            "hidden": false,
+            "text_id": 1210
+        },
+        {
+            "id": 50,
+            "start_id": 99,
+            "end_id": 100,
+            "canvas_id": 1211,
+            "hidden": false,
+            "text_id": 1212
+        },
+        {
+            "id": 51,
+            "start_id": 101,
+            "end_id": 102,
+            "canvas_id": 1213,
+            "hidden": false,
+            "text_id": 1214
+        },
+        {
+            "id": 52,
+            "start_id": 103,
+            "end_id": 104,
+            "canvas_id": 1215,
+            "hidden": false,
+            "text_id": 1216
+        },
+        {
+            "id": 53,
+            "start_id": 105,
+            "end_id": 106,
+            "canvas_id": 1217,
+            "hidden": false,
+            "text_id": 1218
+        },
+        {
+            "id": 54,
+            "start_id": 107,
+            "end_id": 108,
+            "canvas_id": 1219,
+            "hidden": false,
+            "text_id": 1220
+        },
+        {
+            "id": 55,
+            "start_id": 109,
+            "end_id": 110,
+            "canvas_id": 1221,
+            "hidden": false,
+            "text_id": 1222
+        },
+        {
+            "id": 56,
+            "start_id": 111,
+            "end_id": 112,
+            "canvas_id": 1223,
+            "hidden": false,
+            "text_id": 1224
+        },
+        {
+            "id": 57,
+            "start_id": 113,
+            "end_id": 114,
+            "canvas_id": 1225,
+            "hidden": false,
+            "text_id": 1226
+        },
+        {
+            "id": 58,
+            "start_id": 115,
+            "end_id": 116,
+            "canvas_id": 1227,
+            "hidden": false,
+            "text_id": 1228
+        },
+        {
+            "id": 59,
+            "start_id": 117,
+            "end_id": 118,
+            "canvas_id": 1229,
+            "hidden": false,
+            "text_id": 1230
+        },
+        {
+            "id": 60,
+            "start_id": 119,
+            "end_id": 120,
+            "canvas_id": 1231,
+            "hidden": false,
+            "text_id": 1232
+        },
+        {
+            "id": 61,
+            "start_id": 121,
+            "end_id": 122,
+            "canvas_id": 1233,
+            "hidden": false,
+            "text_id": 1234
+        },
+        {
+            "id": 62,
+            "start_id": 123,
+            "end_id": 124,
+            "canvas_id": 1235,
+            "hidden": false,
+            "text_id": 1236
+        },
+        {
+            "id": 63,
+            "start_id": 125,
+            "end_id": 126,
+            "canvas_id": 1237,
+            "hidden": false,
+            "text_id": 1238
+        },
+        {
+            "id": 64,
+            "start_id": 127,
+            "end_id": 128,
+            "canvas_id": 1239,
+            "hidden": false,
+            "text_id": 1240
+        },
+        {
+            "id": 65,
+            "start_id": 129,
+            "end_id": 130,
+            "canvas_id": 1241,
+            "hidden": false,
+            "text_id": 1242
+        },
+        {
+            "id": 66,
+            "start_id": 131,
+            "end_id": 132,
+            "canvas_id": 1243,
+            "hidden": false,
+            "text_id": 1244
+        },
+        {
+            "id": 67,
+            "start_id": 133,
+            "end_id": 134,
+            "canvas_id": 1245,
+            "hidden": false,
+            "text_id": 1246
+        },
+        {
+            "id": 68,
+            "start_id": 135,
+            "end_id": 136,
+            "canvas_id": 1247,
+            "hidden": false,
+            "text_id": 1248
+        },
+        {
+            "id": 69,
+            "start_id": 137,
+            "end_id": 138,
+            "canvas_id": 1249,
+            "hidden": false,
+            "text_id": 1250
+        }
+    ],
     "curves": [],
-    "zoom_level": 1.44,
-    "last_mode": "coordinates",
+    "zoom_level": 1.152,
+    "last_mode": "duplication",
+    "display": {
+        "point_color_2d": "blue",
+        "line_color_2d": "orange",
+        "curve_color_2d": "purple",
+        "point_marker_size": 5,
+        "line_width_2d": 4,
+        "curve_width_2d": 2,
+        "label_font_size": 12,
+        "3d_point_size": 20,
+        "3d_point_color": "b",
+        "3d_line_color": "orange",
+        "3d_curve_color": "purple"
+    },
     "id_counters": {
-        "point_counter": 1,
-        "line_counter": 1,
+        "point_counter": 139,
+        "line_counter": 70,
         "curve_counter": 1
     }
 }

@@ -55,6 +55,12 @@ class DeletionMixin:
             dist = self.point_to_line_distance(pdf_x, pdf_y, start, end)
             if dist <= pdf_tolerance_sq:
                 candidates.append(('line', line, dist))
+                # Also check if this line is a baseline for a curve
+                line_id = line.get('id')
+                curve_with_baseline = next((c for c in self.curves if c.get('base_line_id') == line_id), None)
+                if curve_with_baseline:
+                    # Add the curve as well so it can be found when clicking the baseline
+                    candidates.append(('curve_baseline', curve_with_baseline, dist))
 
         for curve in self.curves:
             for arc_point in curve.get('arc_points_pdf', []):

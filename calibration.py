@@ -24,7 +24,7 @@ class CalibrationMixin:
             self.calculate_transformation()
             self.mode_var.set("coordinates")
             self.calibration_mode = False
-            self.calib_status.config(text=f"Calibration complete: {len(self.reference_points_pdf)} points\nCoordinates mode active")
+            self.update_calibration_status()
             self.update_status("Calibration complete. Ready to collect points.")
 
     def prompt_real_coordinates(self, pdf_x, pdf_y):
@@ -47,7 +47,7 @@ class CalibrationMixin:
         self.calibration_markers.clear()
         self.calibration_mode = False
         self.calibration_step = 0
-        self.calib_status.config(text="Ready")
+        self.update_calibration_status()
         if self.pdf_doc:
             self.display_page()
         self.update_status("Calibration cleared")

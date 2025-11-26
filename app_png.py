@@ -1,6 +1,5 @@
-import tkinter as tk
+﻿import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-import fitz
 from PIL import Image, ImageTk
 import io
 import configparser
@@ -27,12 +26,12 @@ except Exception:
     validate_project = None
 
 
-class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixin, UtilsMixin):
+class PNGViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixin, UtilsMixin):
     def __init__(self, root):
         # This class composes behavior via mixins and uses an external root window.
         # Do not subclass tk.Tk directly when a root is provided.
         self.master = root
-        self.master.title("PDF Viewer - Track Definition")
+        self.master.title("PNG Viewer - Track Definition")
         # Start maximized for better workspace
         try:
             self.master.state('zoomed')
@@ -43,7 +42,8 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
 
         self.A, self.B = 0, 1
 
-        self.pdf_doc = None
+        self.source_image = None
+        self.image_path = None
         self.current_page = 0
         self.total_pages = 0
         self.zoom_level = 1.0
@@ -52,10 +52,10 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         # caching and zoom debounce helpers
         self._zoom_render_job = None
         self._pending_zoom_level = None
-        self._pending_zoom_pdf_coords = None
+        self._pending_zoom_Image_coords = None
         self._last_rendered_pil = None
 
-        self.reference_points_pdf = []
+        self.reference_points_image = []
         self.reference_points_real = []
         self.user_points = []
         
@@ -63,8 +63,6 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         self._current_backup_file = None
         # Track current project path for Save vs Save As behavior
         self._project_path = None
-        # Track if project has been modified since last save
-        self._modified = False
 
         self._drag_data = {"x": 0, "y": 0}
         self.calibration_mode = False
@@ -97,9 +95,6 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
 
         # Deletion log to track removed items
         self.deletion_log = []
-        
-        # Remember last Z value used for duplication
-        self._last_z_value = ""
 
         self.point_markers = {}
         self.point_labels = {}
@@ -119,6 +114,23 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         self._tv_heading_texts = {}
 
         self.build_ui()
+
+    # Compatibility property for mixins that check self.pdf_doc
+    @property
+    def pdf_doc(self):
+        """Compatibility property - returns source_image for mixin compatibility."""
+        return self.source_image
+    
+    # Compatibility property for mixins that use reference_points_pdf
+    @property
+    def reference_points_pdf(self):
+        """Compatibility property - returns reference_points_image for mixin compatibility."""
+        return self.reference_points_image
+    
+    @reference_points_pdf.setter
+    def reference_points_pdf(self, value):
+        """Compatibility setter - sets reference_points_image for mixin compatibility."""
+        self.reference_points_image = value
 
     # Centralized ID helpers to keep legacy counters synchronized with allocator
     def next_point_id(self):
@@ -176,14 +188,13 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         self.master.config(menu=menu_bar)
 
         file_menu = tk.Menu(menu_bar, tearoff=0)
-        file_menu.add_command(label="Open PDF...", command=self.open_file)
+        file_menu.add_command(label="Open Image...", command=self.open_file)
         file_menu.add_command(label="Open Project...", command=self.open_project)
         file_menu.add_command(label="Save Project", command=self.save_project)
         file_menu.add_command(label="Save Project As...", command=self.save_project_as)
-        file_menu.add_command(label="Close PDF", command=self.close_file)
+        file_menu.add_command(label="Close Image", command=self.close_file)
         file_menu.add_separator()
         file_menu.add_command(label="Export Data", command=self.export_data)
-        file_menu.add_command(label="Export PDF to PNG...", command=self.export_pdf_to_png)
         file_menu.add_separator()
         file_menu.add_command(label="Clean Old Backups...", command=self.clean_old_backups)
         file_menu.add_separator()
@@ -274,15 +285,15 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         self.zoom_entry.pack(side="left", padx=2)
         tk.Button(zoom_input_frame, text="Set", command=self.set_zoom_from_entry).pack(side="left", padx=2)
 
-        # PDF fade control (overlay-based, does not trigger re-render)
+        # Image fade control (overlay-based, does not trigger re-render)
         fade_frame = tk.Frame(zoom_frame)
         fade_frame.pack(fill='x', padx=2, pady=(6,2))
-        tk.Label(fade_frame, text="Fade PDF:").pack(side='left')
+        tk.Label(fade_frame, text="Fade Image:").pack(side='left')
         try:
             self.fade_level = tk.IntVar(value=0)
         except Exception:
             self.fade_level = None
-        self.fade_slider = tk.Scale(fade_frame, from_=0, to=100, orient='horizontal', command=lambda v: self._update_pdf_fade(), length=160)
+        self.fade_slider = tk.Scale(fade_frame, from_=0, to=100, orient='horizontal', command=lambda v: self._update_Image_fade(), length=160)
         self.fade_slider.set(0)
         self.fade_slider.pack(side='left', padx=6)
 
@@ -301,9 +312,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         tk.Radiobutton(mode_frame, text="Coordinates", variable=self.mode_var, value="coordinates").pack(anchor="w", padx=10)
         tk.Radiobutton(mode_frame, text="Lines", variable=self.mode_var, value="lines").pack(anchor="w", padx=10)
         tk.Radiobutton(mode_frame, text="Curves", variable=self.mode_var, value="curves").pack(anchor="w", padx=10)
-        tk.Radiobutton(mode_frame, text="Duplicate Points", variable=self.mode_var, value="duplicate_points").pack(anchor="w", padx=10)
-        tk.Radiobutton(mode_frame, text="Duplicate Lines", variable=self.mode_var, value="duplicate_lines").pack(anchor="w", padx=10)
-        tk.Radiobutton(mode_frame, text="Duplicate Curves", variable=self.mode_var, value="duplicate_curves").pack(anchor="w", padx=10)
+        tk.Radiobutton(mode_frame, text="Duplication", variable=self.mode_var, value="duplication").pack(anchor="w", padx=10)
         tk.Radiobutton(mode_frame, text="Deletion", variable=self.mode_var, value="deletion").pack(anchor="w", padx=10)
         tk.Radiobutton(mode_frame, text="Identify", variable=self.mode_var, value="identify").pack(anchor="w", padx=10)
 
@@ -441,7 +450,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         self._3d_initialized = True
 
     def _do_full_zoom_render(self):
-        """Perform a full high-quality PDF render for the pending zoom level and re-center view."""
+        """Perform a full high-quality Image render for the pending zoom level and re-center view."""
         try:
             if getattr(self, '_zoom_render_job', None):
                 try:
@@ -453,9 +462,9 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             if self._pending_zoom_level is None:
                 return
 
-            # preserve desired pdf coords to center on
-            coords = self._pending_zoom_pdf_coords or (None, None)
-            x_pdf, y_pdf = coords
+            # preserve desired Image coords to center on
+            coords = self._pending_zoom_Image_coords or (None, None)
+            x_Image, y_Image = coords
 
             # apply final zoom level and perform full render
             try:
@@ -465,14 +474,14 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             # trigger the normal full rendering path
             self.display_page()
 
-            # if we have a center point, recenter the canvas so that the same PDF point
+            # if we have a center point, recenter the canvas so that the same Image point
             # remains under the original cursor location
             try:
-                if x_pdf is not None and y_pdf is not None and self.photo_image is not None:
+                if x_Image is not None and y_Image is not None and self.photo_image is not None:
                     img_width = self.photo_image.width()
                     img_height = self.photo_image.height()
-                    x_scroll_new = x_pdf * self.zoom_level
-                    y_scroll_new = y_pdf * self.zoom_level
+                    x_scroll_new = x_Image * self.zoom_level
+                    y_scroll_new = y_Image * self.zoom_level
                     frac_x = (x_scroll_new - (self.canvas.winfo_width() // 2)) / img_width if img_width > 0 else 0
                     frac_y = (y_scroll_new - (self.canvas.winfo_height() // 2)) / img_height if img_height > 0 else 0
                     frac_x = max(0, min(1, frac_x))
@@ -487,7 +496,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
 
             # clear pending state
             self._pending_zoom_level = None
-            self._pending_zoom_pdf_coords = None
+            self._pending_zoom_Image_coords = None
         except Exception:
             return
 
@@ -505,18 +514,16 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         points_frame.grid_columnconfigure(0, weight=1)
         tk.Label(points_frame, text='Points').grid(row=0, column=0, sticky='w')
         # Points treeview: include a 'Refs' column showing how many entities reference each point
-        self.points_tv = ttk.Treeview(points_frame, columns=('id', 'coords', 'refs', 'z', 'description', 'hidden'), show='headings', height=24, selectmode='extended')
+        self.points_tv = ttk.Treeview(points_frame, columns=('id', 'coords', 'refs', 'z', 'hidden'), show='headings', height=24, selectmode='extended')
         self.points_tv.heading('id', text='ID', command=lambda c='id': self._treeview_sort(self.points_tv, c))
         self.points_tv.heading('coords', text='Coords', command=lambda c='coords': self._treeview_sort(self.points_tv, c))
         self.points_tv.heading('refs', text='Refs', command=lambda c='refs': self._treeview_sort(self.points_tv, c))
         self.points_tv.heading('z', text='Z', command=lambda c='z': self._treeview_sort(self.points_tv, c))
-        self.points_tv.heading('description', text='Description', command=lambda c='description': self._treeview_sort(self.points_tv, c))
         self.points_tv.heading('hidden', text='Hidden', command=lambda c='hidden': self._treeview_sort(self.points_tv, c))
         self.points_tv.column('id', width=40, anchor='center')
         self.points_tv.column('coords', width=100)
         self.points_tv.column('refs', width=60, anchor='center')
         self.points_tv.column('z', width=50, anchor='center')
-        self.points_tv.column('description', width=120)
         self.points_tv.column('hidden', width=50, anchor='center')
         # add a vertical scrollbar so users see when more rows are available
         pts_v = ttk.Scrollbar(points_frame, orient='vertical', command=self.points_tv.yview)
@@ -630,7 +637,6 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         control_row.pack(fill='x', padx=4, pady=(2,6))
         tk.Button(control_row, text='Delete Selected', command=self.editor_delete_selected).pack(side='left', padx=6)
         tk.Button(control_row, text='Hide/Show Selected', command=self.editor_toggle_hide_selected).pack(side='left')
-        tk.Button(control_row, text='Merge Duplicate Points', command=self.merge_duplicate_points).pack(side='left', padx=6)
 
         # Editor selection/edit state variables and hidden widgets
         try:
@@ -838,12 +844,12 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 try:
                     new_point = {
                         'id': new_pid,
-                        'real_x': int(round(s_pt.get('real_x', s_pt.get('pdf_x', 0)))) ,
-                        'real_y': int(round(s_pt.get('real_y', s_pt.get('pdf_y', 0)))) ,
+                        'real_x': int(round(s_pt.get('real_x', s_pt.get('image_x', 0)))) ,
+                        'real_y': int(round(s_pt.get('real_y', s_pt.get('image_y', 0)))) ,
                         'z': int(round(float(e_pt.get('z', 0)))) ,
                         'hidden': False,
-                        'pdf_x': s_pt.get('pdf_x'),
-                        'pdf_y': s_pt.get('pdf_y'),
+                        'image_x': s_pt.get('image_x'),
+                        'image_y': s_pt.get('image_y'),
                     }
                 except Exception:
                     new_point = {
@@ -852,8 +858,8 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                         'real_y': s_pt.get('real_y', 0),
                         'z': e_pt.get('z', 0),
                         'hidden': False,
-                        'pdf_x': s_pt.get('pdf_x'),
-                        'pdf_y': s_pt.get('pdf_y'),
+                        'image_x': s_pt.get('image_x'),
+                        'image_y': s_pt.get('image_y'),
                     }
                 self.user_points.append(new_point)
                 # update line start
@@ -896,12 +902,12 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 try:
                     new_point = {
                         'id': new_pid,
-                        'real_x': int(round(e_pt.get('real_x', e_pt.get('pdf_x', 0)))) ,
-                        'real_y': int(round(e_pt.get('real_y', e_pt.get('pdf_y', 0)))) ,
+                        'real_x': int(round(e_pt.get('real_x', e_pt.get('image_x', 0)))) ,
+                        'real_y': int(round(e_pt.get('real_y', e_pt.get('image_y', 0)))) ,
                         'z': int(round(float(s_pt.get('z', 0)))) ,
                         'hidden': False,
-                        'pdf_x': e_pt.get('pdf_x'),
-                        'pdf_y': e_pt.get('pdf_y'),
+                        'image_x': e_pt.get('image_x'),
+                        'image_y': e_pt.get('image_y'),
                     }
                 except Exception:
                     new_point = {
@@ -910,8 +916,8 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                         'real_y': e_pt.get('real_y', 0),
                         'z': s_pt.get('z', 0),
                         'hidden': False,
-                        'pdf_x': e_pt.get('pdf_x'),
-                        'pdf_y': e_pt.get('pdf_y'),
+                        'image_x': e_pt.get('image_x'),
+                        'image_y': e_pt.get('image_y'),
                     }
                 self.user_points.append(new_point)
                 # update line end
@@ -937,8 +943,8 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             for it in self.points_tv.get_children():
                 self.points_tv.delete(it)
             for p in self.user_points:
-                coords = f"({p.get('real_x', p.get('pdf_x'))}, {p.get('real_y', p.get('pdf_y'))})"
-                hidden_mark = '✓' if p.get('hidden', False) else ''
+                coords = f"({p.get('real_x', p.get('image_x'))}, {p.get('real_y', p.get('image_y'))})"
+                hidden_mark = 'âœ“' if p.get('hidden', False) else ''
                 # count references from lines and curves
                 try:
                     pid = p['id']
@@ -953,9 +959,8 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                             refs += 1
                 except Exception:
                     refs = 0
-                description = p.get('description', '3D Visualisation')
                 tags = ('new',) if p.get('just_duplicated') else ()
-                self.points_tv.insert('', 'end', iid=f"p_{p['id']}", values=(p['id'], coords, refs, p.get('z', 0), description, hidden_mark), tags=tags)
+                self.points_tv.insert('', 'end', iid=f"p_{p['id']}", values=(p['id'], coords, refs, p.get('z', 0), hidden_mark), tags=tags)
         except Exception:
             pass
 
@@ -964,7 +969,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             for it in self.lines_tv.get_children():
                 self.lines_tv.delete(it)
             for l in self.lines:
-                hidden_mark = '✓' if l.get('hidden', False) else ''
+                hidden_mark = 'âœ“' if l.get('hidden', False) else ''
                 start = l.get('start_id', '')
                 end = l.get('end_id', '')
                 # determine z for the line: explicit 'z' if present, else average of endpoints if available
@@ -990,7 +995,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             for c in self.curves:
                 pts = len(c.get('arc_point_ids', []))
                 zval = c.get('z_level', c.get('z', 0))
-                hidden_mark = '✓' if c.get('hidden', False) else ''
+                hidden_mark = 'âœ“' if c.get('hidden', False) else ''
                 self.curves_tv.insert('', 'end', iid=f"c_{c['id']}", values=(c['id'], pts, zval, hidden_mark))
         except Exception:
             pass
@@ -1101,7 +1106,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 for col in cols:
                     b = base.get(col, col.title())
                     if col == column:
-                        arrow = '▲' if asc else '▼'
+                        arrow = 'â–²' if asc else 'â–¼'
                         label = f"{b} {arrow}"
                     else:
                         label = b
@@ -1135,8 +1140,8 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         if p is None:
             return
         self.point_id_var.set(str(p['id']))
-        self.point_realx_var.set(str(p.get('real_x', p.get('pdf_x'))))
-        self.point_realy_var.set(str(p.get('real_y', p.get('pdf_y'))))
+        self.point_realx_var.set(str(p.get('real_x', p.get('image_x'))))
+        self.point_realy_var.set(str(p.get('real_y', p.get('image_y'))))
         self.point_z_var.set(str(p.get('z', 0)))
         try:
             self.point_hide_var.set(bool(p.get('hidden', False)))
@@ -1680,8 +1685,8 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
 
             # Helper to format a point for display in combobox
             def _fmt_point(p):
-                rx = p.get('real_x', p.get('pdf_x', 0.0))
-                ry = p.get('real_y', p.get('pdf_y', 0.0))
+                rx = p.get('real_x', p.get('image_x', 0.0))
+                ry = p.get('real_y', p.get('image_y', 0.0))
                 z = p.get('z', 0)
                 # count existing refs to give context
                 refs = 0
@@ -1691,7 +1696,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 for c in self.curves:
                     if p['id'] in c.get('arc_point_ids', []) or c.get('start_id') == p['id'] or c.get('end_id') == p['id']:
                         refs += 1
-                return f"{p['id']} — ({rx:.2f},{ry:.2f}) z={z} refs={refs}"
+                return f"{p['id']} â€” ({rx:.2f},{ry:.2f}) z={z} refs={refs}"
 
             display_vals = [_fmt_point(p) for p in candidates_pts]
 
@@ -2068,16 +2073,16 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
 
     # --- Z-level helpers ---
     def _find_points_at_xy(self, point, tol=1e-6):
-        """Return other points that share the same XY (pdf or real coords) within tolerance."""
+        """Return other points that share the same XY (Image or real coords) within tolerance."""
         results = []
         try:
-            x = point.get('real_x', point.get('pdf_x'))
-            y = point.get('real_y', point.get('pdf_y'))
+            x = point.get('real_x', point.get('image_x'))
+            y = point.get('real_y', point.get('image_y'))
             for p in self.user_points:
                 if p is point:
                     continue
-                px = p.get('real_x', p.get('pdf_x'))
-                py = p.get('real_y', p.get('pdf_y'))
+                px = p.get('real_x', p.get('image_x'))
+                py = p.get('real_y', p.get('image_y'))
                 try:
                     if abs(float(px) - float(x)) <= tol and abs(float(py) - float(y)) <= tol:
                         results.append(p)
@@ -2093,10 +2098,10 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             new_id = self.next_point_id()
             new_pt = {
                 'id': new_id,
-                'pdf_x': orig_point.get('pdf_x', orig_point.get('real_x', 0.0)),
-                'pdf_y': orig_point.get('pdf_y', orig_point.get('real_y', 0.0)),
-                'real_x': orig_point.get('real_x', orig_point.get('pdf_x', 0.0)),
-                'real_y': orig_point.get('real_y', orig_point.get('pdf_y', 0.0)),
+                'image_x': orig_point.get('image_x', orig_point.get('real_x', 0.0)),
+                'image_y': orig_point.get('image_y', orig_point.get('real_y', 0.0)),
+                'real_x': orig_point.get('real_x', orig_point.get('image_x', 0.0)),
+                'real_y': orig_point.get('real_y', orig_point.get('image_y', 0.0)),
                 'z': float(z_value),
                 # mark freshly duplicated points so subsequent inline edits can be silent
                 'just_duplicated': True,
@@ -2317,16 +2322,16 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
 
         # Plot points (mirror along Y by negating Y coordinates)
         pts = [p for p in self.user_points if not p.get('hidden', False)]
-        xs = [p.get('real_x', p.get('pdf_x')) for p in pts]
-        ys = [-(p.get('real_y', p.get('pdf_y'))) for p in pts]
+        xs = [p.get('real_x', p.get('image_x')) for p in pts]
+        ys = [-(p.get('real_y', p.get('image_y'))) for p in pts]
         zs = [float(p.get('z', 0)) for p in pts]
         if xs and ys and zs:
             ax.scatter(xs, ys, zs, c=self._3d_point_color, s=self._3d_point_size)
             # Add labels for each visible point (ID) near the point marker
             try:
                 for p in pts:
-                    px = p.get('real_x', p.get('pdf_x'))
-                    py = -(p.get('real_y', p.get('pdf_y')))
+                    px = p.get('real_x', p.get('image_x'))
+                    py = -(p.get('real_y', p.get('image_y')))
                     pz = float(p.get('z', 0))
                     pid = p.get('id')
                     if pid is not None:
@@ -2346,12 +2351,12 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 start = next(p for p in self.user_points if p['id'] == line['start_id'])
                 end = next(p for p in self.user_points if p['id'] == line['end_id'])
                 # Safe coordinate extraction with fallbacks
-                sx = start.get('real_x', start.get('pdf_x', 0.0))
-                sy = -(start.get('real_y', start.get('pdf_y', 0.0)))
+                sx = start.get('real_x', start.get('image_x', 0.0))
+                sy = -(start.get('real_y', start.get('image_y', 0.0)))
                 sz = float(start.get('z', 0.0))
 
-                ex = end.get('real_x', end.get('pdf_x', 0.0))
-                ey = -(end.get('real_y', end.get('pdf_y', 0.0)))
+                ex = end.get('real_x', end.get('image_x', 0.0))
+                ey = -(end.get('real_y', end.get('image_y', 0.0)))
                 ez = float(end.get('z', 0.0))
 
                 ax.plot([sx, ex], [sy, ey], [sz, ez], c=self._3d_line_color)
@@ -2406,7 +2411,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 for pid in curve.get('arc_point_ids', []):
                     p = next((u for u in self.user_points if u['id'] == pid), None)
                     if p:
-                        pts.append((p.get('real_x', p.get('pdf_x')), p.get('real_y', p.get('pdf_y')), float(p.get('z', 0))))
+                        pts.append((p.get('real_x', p.get('image_x')), p.get('real_y', p.get('image_y')), float(p.get('z', 0))))
 
             if not pts:
                 continue
@@ -2727,10 +2732,10 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         self.status_label.config(text=message)
         self.master.update_idletasks()
 
-    def _update_pdf_fade(self):
-        """Update the PDF fade overlay based on slider value without re-rendering the page."""
+    def _update_Image_fade(self):
+        """Update the Image fade overlay based on slider value without re-rendering the page."""
         try:
-            if getattr(self, 'pdf_fade_rect', None) is None:
+            if getattr(self, 'Image_fade_rect', None) is None:
                 return
             level = 0
             try:
@@ -2739,9 +2744,9 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 pass
             # Map 0-100 to Tk stipple steps (discrete): none, gray12, gray25, gray50, gray75
             if level <= 0:
-                self.canvas.itemconfigure(self.pdf_fade_rect, state='hidden')
+                self.canvas.itemconfigure(self.Image_fade_rect, state='hidden')
                 return
-            self.canvas.itemconfigure(self.pdf_fade_rect, state='normal')
+            self.canvas.itemconfigure(self.Image_fade_rect, state='normal')
             if level <= 12:
                 stip = 'gray12'
             elif level <= 25:
@@ -2751,13 +2756,13 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             else:
                 stip = 'gray75'
             try:
-                self.canvas.itemconfigure(self.pdf_fade_rect, stipple=stip)
+                self.canvas.itemconfigure(self.Image_fade_rect, stipple=stip)
             except Exception:
                 # Fallback: toggle visibility for coarse effect
                 if level < 50:
-                    self.canvas.itemconfigure(self.pdf_fade_rect, state='hidden')
+                    self.canvas.itemconfigure(self.Image_fade_rect, state='hidden')
                 else:
-                    self.canvas.itemconfigure(self.pdf_fade_rect, state='normal')
+                    self.canvas.itemconfigure(self.Image_fade_rect, state='normal')
         except Exception:
             pass
 
@@ -2769,76 +2774,134 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             self.calib_status.config(text="Not Calibrated", bg="#ff6666", fg="white")
 
     def open_file(self):
-        file_path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf")])
+        file_path = filedialog.askopenfilename(
+            filetypes=[
+                ("Image files", "*.png *.jpg *.jpeg *.bmp *.gif *.tiff"),
+                ("PNG files", "*.png"),
+                ("JPEG files", "*.jpg *.jpeg"),
+                ("All files", "*.*")
+            ]
+        )
         if file_path:
             try:
                 self.close_file()
-                self.pdf_doc = fitz.open(file_path)
+                # Load image
+                img = Image.open(file_path)
+                
+                # Check if image is too large and needs downscaling
+                max_dimension = 4000  # Maximum dimension to prevent memory errors with Tkinter
+                width, height = img.size
+                if width > max_dimension or height > max_dimension:
+                    scale = max_dimension / max(width, height)
+                    new_width = int(width * scale)
+                    new_height = int(height * scale)
+                    messagebox.showinfo(
+                        "Large Image", 
+                        f"Image is very large ({width}x{height}). Scaling down to {new_width}x{new_height} to prevent memory issues.\n\nCalibration and measurements will still use original coordinates."
+                    )
+                    img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                
+                self.source_image = img.convert('RGB')  # Use RGB instead of RGBA for better memory efficiency
+                self.image_path = file_path
                 self.current_page = 0
-                self.total_pages = len(self.pdf_doc)
+                self.total_pages = 1
                 self.zoom_level = 1.0
                 self.clear_points()
                 self.clear_calibration()
                 self.display_page()
                 self.update_status(f"Loaded: {os.path.basename(file_path)}")
             except Exception as e:
-                messagebox.showerror("Error", f"Could not open PDF: {e}")
+                import traceback
+                traceback.print_exc()
+                messagebox.showerror("Error", f"Could not open image: {e}")
 
     def close_file(self):
-        if self.pdf_doc:
-            self.pdf_doc.close()
-            self.pdf_doc = None
+        if self.source_image:
+            self.source_image = None
+            self.image_path = None
             self.current_page = 0
-            self.total_pages = 0
+            self.total_pages = 1
             self.canvas.delete("all")
             self.point_markers.clear()
             self.calibration_markers.clear()
-            self.update_status("PDF closed")
+            self.update_status("Image closed")
 
     def display_page(self):
-        if not self.pdf_doc:
+        if not self.source_image:
+            print("DEBUG: No source_image")
             return
         try:
-            page = self.pdf_doc[self.current_page]
-            mat = fitz.Matrix(self.zoom_level, self.zoom_level)
-            pix = page.get_pixmap(matrix=mat)
-            img_data = pix.tobytes("ppm")
-            # create a PIL image and cache it for fast preview resizing during interactive zoom
+            # Calculate zoomed dimensions
+            orig_width, orig_height = self.source_image.size
+            new_width = int(orig_width * self.zoom_level)
+            new_height = int(orig_height * self.zoom_level)
+            print(f"DEBUG: Image size: {orig_width}x{orig_height}, zoom: {self.zoom_level}, new: {new_width}x{new_height}")
+            
+            # Safety check for very large zoomed images
+            max_canvas_size = 16000
+            if new_width > max_canvas_size or new_height > max_canvas_size:
+                messagebox.showwarning("Zoom Limit", f"Cannot zoom to {new_width}x{new_height}. Maximum canvas size is {max_canvas_size}x{max_canvas_size}")
+                return
+            
+            # Resize image for current zoom
+            if self.zoom_level == 1.0:
+                pil_img = self.source_image.copy()
+            else:
+                # Use high-quality resampling
+                pil_img = self.source_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            self._last_rendered_pil = pil_img
+            
+            # Create PhotoImage in smaller chunks if needed
             try:
-                pil_img = Image.open(io.BytesIO(img_data)).convert('RGBA')
-                self._last_rendered_pil = pil_img
                 self.photo_image = ImageTk.PhotoImage(pil_img)
-            except Exception:
-                # fallback: keep previous photo_image if any
-                try:
-                    self.photo_image = ImageTk.PhotoImage(Image.open(io.BytesIO(img_data)))
-                except Exception:
-                    pass
+                print(f"DEBUG: PhotoImage created: {self.photo_image.width()}x{self.photo_image.height()}")
+            except MemoryError:
+                messagebox.showerror("Memory Error", "Image is too large to display at this zoom level. Try zooming out.")
+                return
+            
             self.canvas.delete("all")
             self.canvas_image = self.canvas.create_image(0, 0, anchor="nw", image=self.photo_image)
-            self.redraw_markers()
+            print(f"DEBUG: Canvas image created with ID: {self.canvas_image}")
+            
             img_width = self.photo_image.width()
             img_height = self.photo_image.height()
             self.canvas.config(scrollregion=(0, 0, img_width, img_height))
+            print(f"DEBUG: Canvas scrollregion set to: {img_width}x{img_height}")
+            
+            # Force canvas update
+            self.canvas.update_idletasks()
+            
+            # Redraw markers after setting scrollregion
+            self.redraw_markers()
+            
+            # Raise markers above image
             self.canvas.tag_raise("calibration_point")
             self.canvas.tag_raise("user_point")
             self.canvas.tag_raise("user_line")
             self.canvas.tag_raise("line_label")
             self.canvas.tag_raise("user_curve")
             self.canvas.tag_raise("arc_point")
-            self.zoom_entry.delete(0, tk.END)
-            self.zoom_entry.insert(0, f"{self.zoom_level*100:.0f}")
+            
+            # Update zoom display
+            if self.zoom_entry:
+                self.zoom_entry.delete(0, tk.END)
+                self.zoom_entry.insert(0, f"{self.zoom_level*100:.0f}")
+            
+            print("DEBUG: display_page completed successfully")
         except Exception as e:
-            self.update_status(f"Error displaying page: {e}")
+            import traceback
+            traceback.print_exc()
+            self.update_status(f"Error displaying image: {e}")
 
     def zoom_with_focus(self, zoom_factor, x, y):
-        if not self.pdf_doc:
+        if not self.source_image:
             return
         old_zoom = self.zoom_level
         x_scroll = self.canvas.canvasx(x)
         y_scroll = self.canvas.canvasy(y)
-        x_pdf = x_scroll / old_zoom
-        y_pdf = y_scroll / old_zoom
+        x_Image = x_scroll / old_zoom
+        y_Image = y_scroll / old_zoom
         new_zoom = self.zoom_level * zoom_factor
 
         # Quick preview: if we have a cached PIL image for the page, resize it quickly
@@ -2873,7 +2936,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             pass
 
         # Schedule a full quality render after a short debounce interval
-        self._pending_zoom_pdf_coords = (x_pdf, y_pdf)
+        self._pending_zoom_Image_coords = (x_Image, y_Image)
         self._pending_zoom_level = new_zoom
         # cancel previous job
         try:
@@ -2927,7 +2990,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         self.calibration_markers.clear()
         size = getattr(self, 'point_marker_size', 5)
 
-        for i, (px, py) in enumerate(self.reference_points_pdf):
+        for i, (px, py) in enumerate(self.reference_points_image):
             x = px * self.zoom_level
             y = py * self.zoom_level
             m_id = self.canvas.create_oval(x - size, y - size, x + size, y + size,
@@ -3082,7 +3145,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         if mode_name == "calibration":
             self.calibration_mode = True
             self.calibration_step = 0
-            self.reference_points_pdf.clear()
+            self.reference_points_image.clear()
             self.reference_points_real.clear()
             self.calibration_markers.clear()
             self.current_line_points.clear()
@@ -3109,19 +3172,19 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             self.zoom_entry.insert(0, f"{self.zoom_level*100:.0f}")
 
     def zoom_in(self):
-        if self.pdf_doc:
+        if self.source_image:
             self.zoom_with_focus(1.2, self.canvas.winfo_width() // 2, self.canvas.winfo_height() // 2)
 
     def zoom_out(self):
-        if self.pdf_doc:
+        if self.source_image:
             self.zoom_with_focus(1 / 1.2, self.canvas.winfo_width() // 2, self.canvas.winfo_height() // 2)
 
     def fit_page(self):
-        if not self.pdf_doc:
+        if not self.source_image:
             return
         canvas_width = self.canvas.winfo_width()
         canvas_height = self.canvas.winfo_height()
-        page = self.pdf_doc[self.current_page]
+        page = self.source_image[self.current_page]
         page_rect = page.bound()
         page_width = page_rect.width
         page_height = page_rect.height
@@ -3161,17 +3224,17 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         pass
 
     def on_mouse_move(self, event):
-        if not self.pdf_doc:
+        if not self.source_image:
             return
         canvas_x = self.canvas.canvasx(event.x)
         canvas_y = self.canvas.canvasy(event.y)
-        pdf_x = canvas_x / self.zoom_level
-        pdf_y = canvas_y / self.zoom_level
+        image_x = canvas_x / self.zoom_level
+        image_y = canvas_y / self.zoom_level
         if self.calibration_mode:
-            self.calib_status.config(text=f"Pos: ({pdf_x:.1f}, {pdf_y:.1f})\nStep: {self.calibration_step}")
+            self.calib_status.config(text=f"Pos: ({image_x:.1f}, {image_y:.1f})\nStep: {self.calibration_step}")
 
     def on_left_click(self, event):
-        if not self.pdf_doc:
+        if not self.source_image:
             return
         mode = self.mode_var.get()
         if mode == "deletion":
@@ -3180,23 +3243,23 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
 
         canvas_x = self.canvas.canvasx(event.x)
         canvas_y = self.canvas.canvasy(event.y)
-        pdf_x = canvas_x / self.zoom_level
-        pdf_y = canvas_y / self.zoom_level
+        image_x = canvas_x / self.zoom_level
+        image_y = canvas_y / self.zoom_level
 
         if mode == "calibration":
-            self.handle_calibration_click(canvas_x, canvas_y, pdf_x, pdf_y)
+            self.handle_calibration_click(canvas_x, canvas_y, image_x, image_y)
         elif mode == "coordinates":
-            self.handle_coordinates_click(canvas_x, canvas_y, pdf_x, pdf_y)
+            self.handle_coordinates_click(canvas_x, canvas_y, image_x, image_y)
         elif mode == "lines":
             self.handle_lines_click(canvas_x, canvas_y)
         elif mode == "curves":
             self.handle_curves_click(canvas_x, canvas_y)
-        elif mode in ["duplicate_points", "duplicate_lines", "duplicate_curves"]:
+        elif mode == "duplication":
             self.handle_duplication_click(event)
         elif mode == "identify":
             # Identify multiple nearby items at this location and present details
             try:
-                candidates = self.find_items_near(pdf_x, pdf_y)
+                candidates = self.find_items_near(image_x, image_y)
             except Exception:
                 candidates = None
             if not candidates:
@@ -3206,7 +3269,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             lines = []
             for kind, item, dist in candidates:
                 if kind == 'point':
-                    lines.append(f"Point id={item.get('id')} pdf=({item.get('pdf_x')},{item.get('pdf_y')}) z={item.get('z', '')}")
+                    lines.append(f"Point id={item.get('id')} Image=({item.get('image_x')},{item.get('image_y')}) z={item.get('z', '')}")
                 elif kind == 'line':
                     lines.append(f"Line id={item.get('id')} start={item.get('start_id')} end={item.get('end_id')}")
                 else:
@@ -3220,18 +3283,18 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             self.update_status(f"Unknown mode: {mode}")
 
     def save_project(self):
-        # Allow saving once a PDF is loaded or calibration exists.
+        # Allow saving once a Image is loaded or calibration exists.
         # Points, lines and curves are optional for a valid project.
-        if self.pdf_doc is None and self.transformation_matrix is None:
-            messagebox.showwarning("No Data", "No PDF loaded and no calibration available. Load a PDF or complete calibration before saving.")
+        if self.source_image is None and self.transformation_matrix is None:
+            messagebox.showwarning("No Data", "No Image loaded and no calibration available. Load a Image or complete calibration before saving.")
             return
         # If we have an existing project path, save directly; otherwise route to Save As
         project_path = self._project_path
         if not project_path:
             return self.save_project_as()
         project_data = {
-            "pdf_path": self.pdf_doc.name if self.pdf_doc else "",
-            "calibration_pdf_points": self.reference_points_pdf,
+            "image_path": self.source_image.name if self.source_image else "",
+            "calibration_image_points": self.reference_points_image,
             "calibration_real_points": self.reference_points_real,
             "transformation_matrix": self.transformation_matrix.tolist() if self.transformation_matrix is not None else None,
             "points": self.user_points,
@@ -3278,7 +3341,6 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         try:
             with open(project_path, 'w') as f:
                 json.dump(project_data, f, indent=4)
-            self._modified = False  # Reset modified flag after successful save
             messagebox.showinfo("Saved", f"Project saved to {project_path}")
             self.update_status(f"Project saved to {project_path}")
         except Exception as e:
@@ -3286,8 +3348,8 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
 
     def save_project_as(self):
         # Save with choose path, then set current project path
-        if self.pdf_doc is None and self.transformation_matrix is None:
-            messagebox.showwarning("No Data", "No PDF loaded and no calibration available. Load a PDF or complete calibration before saving.")
+        if self.source_image is None and self.transformation_matrix is None:
+            messagebox.showwarning("No Data", "No Image loaded and no calibration available. Load a Image or complete calibration before saving.")
             return
         project_path = filedialog.asksaveasfilename(defaultextension=".dig",
                                                     filetypes=[("DIG Project Files", "*.dig")],
@@ -3325,15 +3387,16 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 # If migration fails, continue with best-effort
                 pass
 
-            pdf_path = project_data.get("pdf_path", "")
-            if not os.path.exists(pdf_path):
-                messagebox.showwarning("PDF Missing", f"PDF file not found: {pdf_path}")
+            Image_path = project_data.get("image_path", "")
+            if not os.path.exists(Image_path):
+                messagebox.showwarning("Image Missing", f"Image file not found: {Image_path}")
                 return
             self.close_file()
-            self.pdf_doc = fitz.open(pdf_path)
+            self.source_image = Image.open(Image_path).convert('RGBA')
+            self.image_path = Image_path
             self.current_page = 0
-            self.total_pages = len(self.pdf_doc)
-            self.reference_points_pdf = project_data.get("calibration_pdf_points", [])
+            self.total_pages = 1
+            self.reference_points_image = project_data.get("calibration_image_points", [])
             self.reference_points_real = project_data.get("calibration_real_points", [])
             tmatrix = project_data.get("transformation_matrix")
             if tmatrix:
@@ -3492,10 +3555,10 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         total_positions = max(2, int(getattr(self, 'curve_interior_points', 4)) + 2)
 
         def find_or_create_point(px, py, z_val=None):
-            # Try to find an existing point by pdf coords (exact match, small tolerance)
+            # Try to find an existing point by Image coords (exact match, small tolerance)
             tol = 1e-6
             for p in self.user_points:
-                if abs(p.get('pdf_x', 1e12) - px) < tol and abs(p.get('pdf_y', 1e12) - py) < tol:
+                if abs(p.get('image_x', 1e12) - px) < tol and abs(p.get('image_y', 1e12) - py) < tol:
                     return p['id']
             # Create new point
             rx, ry = self.transform_point(px, py)
@@ -3503,8 +3566,8 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             new_id = self.next_point_id()
             new_pt = {
                 'id': new_id,
-                'pdf_x': px,
-                'pdf_y': py,
+                'image_x': px,
+                'image_y': py,
                 'real_x': round(rx, 2),
                 'real_y': round(ry, 2),
                 'z': float(z_val) if z_val is not None else 0.0
@@ -3520,10 +3583,10 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             # If arc_point_ids present and correct length, keep them
             ids = list(curve.get('arc_point_ids', [])) if curve.get('arc_point_ids') else []
 
-            # If arc_points_pdf present, try to map them to points
-            arc_pdf = curve.get('arc_points_pdf', [])
-            if not ids and arc_pdf:
-                for (px, py) in arc_pdf:
+            # If arc_points_Image present, try to map them to points
+            arc_Image = curve.get('arc_points_Image', [])
+            if not ids and arc_Image:
+                for (px, py) in arc_Image:
                     pid = find_or_create_point(px, py, z_level)
                     ids.append(pid)
 
@@ -3542,31 +3605,31 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                         ids.remove(end_id)
                     ids.append(end_id)
 
-            # If still missing positions, interpolate between start and end (pdf coords)
+            # If still missing positions, interpolate between start and end (Image coords)
             if len(ids) < total_positions:
-                # gather pdf coords for interpolation
-                if arc_pdf and len(arc_pdf) >= 2:
-                    # use pdf coords from arc_pdf if available
-                    # build complete list of pdf coords (try to include start/end)
-                    pdf_coords = list(arc_pdf)
-                    # ensure start/end pdf present
+                # gather Image coords for interpolation
+                if arc_Image and len(arc_Image) >= 2:
+                    # use Image coords from arc_Image if available
+                    # build complete list of Image coords (try to include start/end)
+                    Image_coords = list(arc_Image)
+                    # ensure start/end Image present
                     try:
                         if start_id is not None:
                             sp = next((p for p in self.user_points if p['id'] == start_id), None)
                             if sp:
-                                if (sp['pdf_x'], sp['pdf_y']) not in pdf_coords:
-                                    pdf_coords.insert(0, (sp['pdf_x'], sp['pdf_y']))
+                                if (sp['image_x'], sp['image_y']) not in Image_coords:
+                                    Image_coords.insert(0, (sp['image_x'], sp['image_y']))
                         if end_id is not None:
                             ep = next((p for p in self.user_points if p['id'] == end_id), None)
                             if ep:
-                                if (ep['pdf_x'], ep['pdf_y']) not in pdf_coords:
-                                    pdf_coords.append((ep['pdf_x'], ep['pdf_y']))
+                                if (ep['image_x'], ep['image_y']) not in Image_coords:
+                                    Image_coords.append((ep['image_x'], ep['image_y']))
                     except Exception:
                         pass
                     # linear interpolate along the available endpoints
-                    if len(pdf_coords) >= 2:
-                        sx, sy = pdf_coords[0]
-                        ex, ey = pdf_coords[-1]
+                    if len(Image_coords) >= 2:
+                        sx, sy = Image_coords[0]
+                        ex, ey = Image_coords[-1]
                         needed = total_positions - len(ids)
                         # insert interior points between start and end
                         insert_ids = []
@@ -3630,14 +3693,10 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             for point in self.user_points:
                 # ensure real coords exist
                 if 'real_x' not in point or 'real_y' not in point:
-                    rx, ry = self.transform_point(point.get('pdf_x', 0.0), point.get('pdf_y', 0.0))
+                    rx, ry = self.transform_point(point.get('image_x', 0.0), point.get('image_y', 0.0))
                     point['real_x'] = round(rx, 2)
                     point['real_y'] = round(ry, 2)
-                # Swap Y and Z, and export as integers
-                x = int(round(point['real_x']))
-                z = int(round(point['real_y']))  # real_y becomes Z
-                y = int(round(point.get('z', 0.0)))  # z becomes Y
-                f.write(f"{point['id']},{x},{y},{z}\n")
+                f.write(f"{point['id']},{point['real_x']},{point['real_y']},{point.get('z', 0.0)}\n")
 
         with open(lines_file, 'w', newline='') as f:
             writer = csv.writer(f)
@@ -3679,13 +3738,8 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             f.write("-- Insert Visualization_Coordinate (Points)\n")
             f.write("SET IDENTITY_INSERT SeasPathDB.dbo.Visualization_Coordinate ON;\n")
             for point in self.user_points:
-                # Swap Y and Z, and export as integers
-                x = int(round(point['real_x']))
-                z = int(round(point['real_y']))  # real_y becomes Z
-                y = int(round(point.get('z', 0.0)))  # z becomes Y
-                desc = point.get('description', '3D Visualisation')
                 f.write(f"INSERT INTO SeasPathDB.dbo.Visualization_Coordinate (Id, X, Y, Z, Description) ")
-                f.write(f"VALUES ({point['id']}, {x}, {y}, {z}, '{desc}');\n")
+                f.write(f"VALUES ({point['id']}, {point['real_x']}, {point['real_y']}, {point.get('z', 0.0)}, '3D Visualisation');\n")
             f.write("SET IDENTITY_INSERT SeasPathDB.dbo.Visualization_Coordinate OFF;\n\n")
 
             # Lines table
@@ -3716,101 +3770,25 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
 
         messagebox.showinfo("Export Success", f"Exported data to {export_dir}\nFiles: {project_name}_points.txt, {project_name}_lines.txt, {project_name}_curves.txt, {project_name}_insert.sql")
 
-    def find_closest_item_by_type(self, pdf_x, pdf_y, entity_type):
-        """Find closest item of a specific type (point, line, or curve)."""
-        # Get all candidates
-        candidates = self.find_items_near(pdf_x, pdf_y)
-        
-        # Debug: log what was found
-        if not candidates:
-            self.update_status(f"No items found near click location (PDF: {pdf_x:.1f}, {pdf_y:.1f})")
-            return None
-        
-        # Filter by type (note: find_items_near returns 'curve_arc' for curves and 'curve_baseline' for baseline clicks)
-        if entity_type == 'curve':
-            filtered = [(kind, item, dist) for kind, item, dist in candidates if kind in ('curve', 'curve_arc', 'curve_baseline')]
-        else:
-            filtered = [(kind, item, dist) for kind, item, dist in candidates if kind == entity_type]
-        
-        if not filtered:
-            # Debug: show what types were found
-            found_types = set(kind for kind, _, _ in candidates)
-            self.update_status(f"No {entity_type} found. Found: {', '.join(found_types)}")
-            return None
-        
-        # If only one, return it
-        if len(filtered) == 1:
-            kind, item, _ = filtered[0]
-            return (kind, item)
-        
-        # Multiple candidates: ask user which to select
-        from tkinter import simpledialog, messagebox
-        choices = []
-        for idx, (kind, item, dist) in enumerate(filtered, start=1):
-            if kind == 'point':
-                z = item.get('z', 0)
-                choices.append(f"{idx}: Point id={item.get('id')} z={z}")
-            elif kind == 'line':
-                # Attempt to determine average Z of line endpoints
-                try:
-                    s = next(p for p in self.user_points if p['id'] == item['start_id'])
-                    e = next(p for p in self.user_points if p['id'] == item['end_id'])
-                    z = (float(s.get('z', 0)) + float(e.get('z', 0))) / 2.0
-                except Exception:
-                    z = 'n/a'
-                choices.append(f"{idx}: Line id={item.get('id')} z={z}")
-            else:
-                z = item.get('z_level', item.get('z', 'n/a'))
-                choices.append(f"{idx}: Curve id={item.get('id')} z={z}")
-        
-        choice_str = "\n".join(choices)
-        answer = simpledialog.askstring("Select Entity", f"Multiple {entity_type}s found. Enter number:\n{choice_str}")
-        if answer:
-            try:
-                selection = int(answer)
-                if 1 <= selection <= len(filtered):
-                    kind, item, _ = filtered[selection - 1]
-                    return (kind, item)
-            except ValueError:
-                pass
-        return None
-
     def handle_duplication_click(self, event):
         canvas_x = self.canvas.canvasx(event.x)
         canvas_y = self.canvas.canvasy(event.y)
-        pdf_x = canvas_x / self.zoom_level
-        pdf_y = canvas_y / self.zoom_level
+        image_x = canvas_x / self.zoom_level
+        image_y = canvas_y / self.zoom_level
 
-        # Determine what type to search for based on mode
-        mode = self.mode_var.get()
-        if mode == 'duplicate_points':
-            search_type = 'point'
-        elif mode == 'duplicate_lines':
-            search_type = 'line'
-        elif mode == 'duplicate_curves':
-            search_type = 'curve'
-        else:
-            self.update_status("Invalid duplication mode.")
-            return
-
-        # Find closest entity of the specified type
-        selected = self.find_closest_item_by_type(pdf_x, pdf_y, search_type)
+        # Find closest entity
+        selected = self.find_closest_item(image_x, image_y)
         if selected is None:
-            self.update_status(f"No {search_type} close enough to duplicate.")
+            self.update_status("No entity close enough to duplicate.")
             return
 
         entity_type, entity = selected
 
-        # Ask for Z values with last used value as default
+        # Ask for Z values
         from tkinter import simpledialog
-        prompt_text = "Enter Z values (comma-delimited):\nExample: 1,2,3"
-        if self._last_z_value:
-            prompt_text += f"\n\nLast used: {self._last_z_value}"
-        
         z_input = simpledialog.askstring(
             "Duplicate Entity",
-            prompt_text,
-            initialvalue=self._last_z_value
+            "Enter Z values (comma-delimited):\nExample: 1,2,3"
         )
         if not z_input:
             return
@@ -3820,59 +3798,18 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         except ValueError:
             messagebox.showerror("Invalid Input", "Please enter valid Z values.")
             return
-        
-        # Remember this Z value for next time
-        self._last_z_value = z_input
 
         # Duplicate based on entity type
         if entity_type == 'point':
             self.duplicate_point(entity, z_values)
         elif entity_type == 'line':
             self.duplicate_line(entity, z_values)
-        elif entity_type in ('curve', 'curve_arc', 'curve_baseline'):
+        elif entity_type == 'curve_arc':
             self.duplicate_curve(entity, z_values)
 
         self.redraw_markers()
         self.update_points_label()
         self.update_status(f"Duplicated {entity_type} at {len(z_values)} Z levels.")
-
-    def export_pdf_to_png(self):
-        """Export current PDF page to PNG at full resolution."""
-        if not self.pdf_doc:
-            messagebox.showwarning("No PDF", "Please open a PDF file first.")
-            return
-        
-        # Ask for output file
-        from tkinter import filedialog
-        output_path = filedialog.asksaveasfilename(
-            defaultextension=".png",
-            filetypes=[("PNG files", "*.png"), ("All files", "*.*")],
-            title="Save PDF page as PNG"
-        )
-        if not output_path:
-            return
-        
-        try:
-            # Get current page
-            page = self.pdf_doc[self.current_page]
-            
-            # Render at high resolution (300 DPI)
-            # Default is 72 DPI, so 300/72 = 4.166... zoom factor
-            zoom = 300 / 72
-            mat = fitz.Matrix(zoom, zoom)
-            pix = page.get_pixmap(matrix=mat, alpha=False)
-            
-            # Save directly to PNG
-            pix.save(output_path)
-            
-            messagebox.showinfo(
-                "Export Complete",
-                f"PDF page exported to:\n{output_path}\n\nResolution: {pix.width}x{pix.height} pixels"
-            )
-            self.update_status(f"Exported PDF page to {os.path.basename(output_path)}")
-            
-        except Exception as e:
-            messagebox.showerror("Export Error", f"Failed to export PDF to PNG:\n{e}")
 
     def duplicate_point(self, point, z_values):
         for z in z_values:
@@ -3882,19 +3819,8 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             new_point['id'] = new_id
             new_point['z'] = z
             self.user_points.append(new_point)
-        self.mark_modified()
 
     def duplicate_line(self, line, z_values):
-        # Check if this line is a baseline for any curve
-        line_id = line.get('id')
-        curve_using_line = next((c for c in self.curves if c.get('base_line_id') == line_id), None)
-        
-        if curve_using_line:
-            # This line is a curve baseline - duplicate the entire curve instead
-            self.duplicate_curve(curve_using_line, z_values)
-            return
-        
-        # Regular line duplication
         for z in z_values:
             # Get start and end points
             start = next(p for p in self.user_points if p['id'] == line['start_id'])
@@ -3927,7 +3853,6 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             new_line['start_id'] = start_id
             new_line['end_id'] = end_id
             self.lines.append(new_line)
-        self.mark_modified()
 
     def duplicate_curve(self, curve, z_values):
         for z in z_values:
@@ -3943,142 +3868,13 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 self.user_points.append(new_point)
                 new_arc_point_ids.append(new_pid)
 
-            # Duplicate the baseline if it exists
-            base_line_id = curve.get('base_line_id')
-            new_base_line_id = 0
-            if base_line_id:
-                base_line = next((l for l in self.lines if l.get('id') == base_line_id), None)
-                if base_line:
-                    # Get baseline endpoints
-                    start = next((p for p in self.user_points if p['id'] == base_line['start_id']), None)
-                    end = next((p for p in self.user_points if p['id'] == base_line['end_id']), None)
-                    
-                    if start and end:
-                        # Create new start point
-                        new_start = start.copy()
-                        new_start['id'] = self.next_point_id()
-                        new_start['z'] = z
-                        self.user_points.append(new_start)
-                        
-                        # Create new end point
-                        new_end = end.copy()
-                        new_end['id'] = self.next_point_id()
-                        new_end['z'] = z
-                        self.user_points.append(new_end)
-                        
-                        # Create new baseline
-                        new_base_line = base_line.copy()
-                        new_base_line_id = self.next_line_id()
-                        new_base_line['id'] = new_base_line_id
-                        new_base_line['start_id'] = new_start['id']
-                        new_base_line['end_id'] = new_end['id']
-                        self.lines.append(new_base_line)
-
             # Create new curve
             new_curve = curve.copy()
             # Allocate new curve id via centralized helper
             new_curve['id'] = self.next_curve_id()
             new_curve['arc_point_ids'] = new_arc_point_ids
             new_curve['z_level'] = z
-            new_curve['base_line_id'] = new_base_line_id
             self.curves.append(new_curve)
-        self.mark_modified()
-
-    def merge_duplicate_points(self):
-        """Merge all points with identical 3D coordinates into the point with lowest ID."""
-        from tkinter import messagebox
-        
-        if not self.user_points:
-            messagebox.showinfo("Merge Duplicates", "No points to merge.")
-            return
-        
-        # Build map of (x, y, z) -> list of points with those coordinates
-        position_map = {}
-        for point in self.user_points:
-            # Get integer coordinates for comparison
-            x = int(round(point.get('real_x', 0)))
-            y = int(round(point.get('z', 0)))
-            z = int(round(point.get('real_y', 0)))
-            key = (x, y, z)
-            
-            if key not in position_map:
-                position_map[key] = []
-            position_map[key].append(point)
-        
-        # Find duplicate groups (positions with more than one point)
-        merge_map = {}  # old_id -> new_id (keeping lowest ID)
-        points_to_remove = set()
-        merge_count = 0
-        
-        for position, points in position_map.items():
-            if len(points) > 1:
-                # Sort by ID to keep the lowest
-                points_sorted = sorted(points, key=lambda p: p['id'])
-                keeper = points_sorted[0]
-                keeper_id = keeper['id']
-                
-                # Map all other IDs to the keeper
-                for i in range(1, len(points_sorted)):
-                    dup = points_sorted[i]
-                    merge_map[dup['id']] = keeper_id
-                    points_to_remove.add(dup['id'])
-                    merge_count += 1
-        
-        if not merge_map:
-            messagebox.showinfo("Merge Duplicates", "No duplicate points found.")
-            return
-        
-        # Confirm with user
-        total_points = len(self.user_points)
-        remaining_points = total_points - merge_count
-        
-        confirm = messagebox.askyesno(
-            "Merge Duplicates",
-            f"Found {merge_count} duplicate point(s) to remove.\n\n"
-            f"Current points: {total_points}\n"
-            f"After merge: {remaining_points}\n\n"
-            f"Lines and curves will be updated to reference the merged points.\n\n"
-            f"Proceed with merge?"
-        )
-        
-        if not confirm:
-            return
-        
-        # Update all references in lines
-        for line in self.lines:
-            if line.get('start_id') in merge_map:
-                line['start_id'] = merge_map[line['start_id']]
-            if line.get('end_id') in merge_map:
-                line['end_id'] = merge_map[line['end_id']]
-        
-        # Update all references in curves
-        for curve in self.curves:
-            # Update arc_point_ids
-            if 'arc_point_ids' in curve:
-                curve['arc_point_ids'] = [
-                    merge_map.get(pid, pid) for pid in curve['arc_point_ids']
-                ]
-            # Update start_id and end_id if present
-            if 'start_id' in curve and curve['start_id'] in merge_map:
-                curve['start_id'] = merge_map[curve['start_id']]
-            if 'end_id' in curve and curve['end_id'] in merge_map:
-                curve['end_id'] = merge_map[curve['end_id']]
-        
-        # Remove duplicate points
-        self.user_points = [p for p in self.user_points if p['id'] not in points_to_remove]
-        
-        # Mark as modified and refresh display
-        self.mark_modified()
-        self.redraw_markers()
-        self.refresh_editor_lists()
-        self.update_points_label()
-        
-        messagebox.showinfo(
-            "Merge Complete",
-            f"Merged {merge_count} duplicate points.\n"
-            f"Remaining points: {len(self.user_points)}"
-        )
-        self.update_status(f"Merged {merge_count} duplicate points")
 
 
     def hide_all_elements(self):
@@ -4122,21 +3918,20 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
 
     def on_exit(self):
         """Handle application exit with save confirmation and backup cleanup."""
-        # Only ask to save if project has been modified
-        if self._modified:
-            answer = messagebox.askyesnocancel(
-                "Save Project?",
-                "Do you want to save the project before exiting?",
-                icon='question'
-            )
-            
-            if answer is None:  # Cancel
-                return
-            
-            if answer:  # Yes - save project
-                self.save_project()
+        # Ask user if they want to save before exiting
+        answer = messagebox.askyesnocancel(
+            "Save Project?",
+            "Do you want to save the project before exiting?",
+            icon='question'
+        )
         
-        # Always clean up backup file on exit
+        if answer is None:  # Cancel
+            return
+        
+        if answer:  # Yes - save project
+            self.save_project()
+        
+        # Clean up backup file (for both Yes and No)
         if self._current_backup_file and os.path.exists(self._current_backup_file):
             try:
                 os.remove(self._current_backup_file)
@@ -4145,10 +3940,6 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 print(f"Could not delete backup file: {e}")
         
         self.master.destroy()
-
-    def mark_modified(self):
-        """Mark the project as modified (has unsaved changes)."""
-        self._modified = True
 
     def clean_old_backups(self):
         """Show dialog to clean up accumulated .dig.bak.* files."""
