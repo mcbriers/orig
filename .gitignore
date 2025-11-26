@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.pyc
+*.pyo
+
+# Project-specific
+*.bak
+*.bak.*
+*.dig
+*.dig.bak
+config.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# Environment
+.env
+.venv
+venv/
+ENV/
+
+# Test/temp files
+temp/
+tmp/
+test_output/
