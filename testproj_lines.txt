@@ -1,2 +1,0 @@
-LineID,StartPointID,EndPointID
-100,1,2

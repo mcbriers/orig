@@ -1,5 +1,0 @@
-LineID,StartPointID,EndPointID,StartPointZ,EndPointZ
-1,2,3,0.0,0.0
-2,4,5,0.0,0.0
-3,1,6,0.0,0.0
-4,11,12,0.0,0.0

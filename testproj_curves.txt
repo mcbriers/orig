@@ -1,3 +1,0 @@
-Position,PointID,LineID
-0,1,100
-1,2,100

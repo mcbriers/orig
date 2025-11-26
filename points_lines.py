@@ -1,4 +1,5 @@
 import numpy as np
+from tkinter import messagebox
 
 
 class PointsLinesMixin:
@@ -10,14 +11,16 @@ class PointsLinesMixin:
 
         point = {
             'id': pid,
-            'real_x': np.round(real_x, 2),
-            'real_y': np.round(real_y, 2),
-            'z': z_level,
+            'real_x': int(round(real_x)),
+            'real_y': int(round(real_y)),
+            'z': int(round(float(z_level))) if str(z_level).strip() != '' else 0,
             'hidden': False,
             'pdf_x': pdf_x,
             'pdf_y': pdf_y,
+            'description': '3D Visualisation',
         }
         self.user_points.append(point)
+        self.mark_modified()
         size = getattr(self, 'point_marker_size', 5)
         clr = getattr(self, 'point_color_2d', 'blue')
         marker_id = self.canvas.create_oval(canvas_x - size, canvas_y - size, canvas_x + size, canvas_y + size,
@@ -94,6 +97,7 @@ class PointsLinesMixin:
             # default visibility in 3D
             line_data['hidden'] = False
             self.lines.append(line_data)
+            self.mark_modified()
             mid_x = (x1 + x2) / 2
             mid_y = (y1 + y2) / 2
             text_offset = 15
@@ -229,6 +233,7 @@ class PointsLinesMixin:
                 'canvas_id': line_id
             }
             self.lines.append(line_data)
+            self.mark_modified()
             mid_x = (x1 + x2) / 2
             mid_y = (y1 + y2) / 2
             text_offset = 15
@@ -244,11 +249,42 @@ class PointsLinesMixin:
             self.canvas.delete("temp_line_point")
 
     def clear_points(self):
+        # Confirmation dialog
+        if not messagebox.askyesno("Clear All Data", 
+                                   "This will clear all points, lines, and curves.\n\nAre you sure?",
+                                   icon='warning'):
+            return
+        
+        # Store undo snapshot
+        try:
+            self._undo_snapshot = {
+                'points': [p.copy() for p in self.user_points],
+                'lines': [l.copy() for l in self.lines],
+                'curves': [c.copy() for c in self.curves],
+                'operation': 'clear_all'
+            }
+        except Exception:
+            pass
+        
         self.user_points.clear()
         self.point_markers.clear()
         self.lines.clear()
         self.curves.clear()
+        # Reset ID allocator/counters so new items start from 1
+        try:
+            if hasattr(self, 'allocator') and self.allocator is not None:
+                self.allocator.reset()
+        except Exception:
+            pass
         self.points_label.config(text="Points: 0")
+        try:
+            self.lines_label.config(text=f"Lines: {len(self.lines)}")
+        except Exception:
+            pass
+        try:
+            self.curves_label.config(text=f"Curves: {len(self.curves)}")
+        except Exception:
+            pass
         try:
             if hasattr(self, 'update_lines_label'):
                 self.update_lines_label()
@@ -261,7 +297,210 @@ class PointsLinesMixin:
             pass
         if self.pdf_doc:
             self.display_page()
-        self.update_status("Points cleared")
+        
+        # Refresh editor to keep treeviews in sync
+        try:
+            if hasattr(self, 'refresh_editor_lists'):
+                self.refresh_editor_lists()
+        except Exception:
+            pass
+        
+        # Update 3D view
+        try:
+            if hasattr(self, 'update_3d_plot'):
+                self.update_3d_plot()
+        except Exception:
+            pass
+        
+        self.update_status("All data cleared (use Edit → Undo Clear to restore)")
+
+    def clear_lines_only(self):
+        """Clear only lines, keeping points and curves intact."""
+        if not self.lines:
+            messagebox.showinfo("No Lines", "There are no lines to clear.")
+            return
+        
+        if not messagebox.askyesno("Clear Lines", 
+                                   f"This will clear all {len(self.lines)} lines.\n\nPoints and curves will remain.\n\nAre you sure?",
+                                   icon='warning'):
+            return
+        
+        # Store undo snapshot
+        try:
+            self._undo_snapshot = {
+                'lines': [l.copy() for l in self.lines],
+                'operation': 'clear_lines'
+            }
+        except Exception:
+            pass
+        
+        self.lines.clear()
+        
+        try:
+            self.lines_label.config(text=f"Lines: {len(self.lines)}")
+        except Exception:
+            pass
+        
+        if self.pdf_doc:
+            try:
+                self.redraw_markers()
+            except Exception:
+                self.display_page()
+        
+        try:
+            if hasattr(self, 'refresh_editor_lists'):
+                self.refresh_editor_lists()
+        except Exception:
+            pass
+        
+        try:
+            if hasattr(self, 'update_3d_plot'):
+                self.update_3d_plot()
+        except Exception:
+            pass
+        
+        self.update_status("Lines cleared (use Edit → Undo Clear to restore)")
+
+    def clear_curves_only(self):
+        """Clear only curves, keeping points and lines intact."""
+        if not self.curves:
+            messagebox.showinfo("No Curves", "There are no curves to clear.")
+            return
+        
+        if not messagebox.askyesno("Clear Curves", 
+                                   f"This will clear all {len(self.curves)} curves and their base lines.\n\nPoints and other lines will remain.\n\nAre you sure?",
+                                   icon='warning'):
+            return
+        
+        # Collect base line IDs from curves before clearing
+        base_line_ids = set()
+        for c in self.curves:
+            base_line_id = c.get('base_line_id')
+            if base_line_id and base_line_id != 0:
+                base_line_ids.add(base_line_id)
+        
+        # Store undo snapshot (include both curves and their base lines)
+        try:
+            base_lines = [l.copy() for l in self.lines if l.get('id') in base_line_ids]
+            self._undo_snapshot = {
+                'curves': [c.copy() for c in self.curves],
+                'base_lines': base_lines,
+                'operation': 'clear_curves'
+            }
+        except Exception:
+            pass
+        
+        # Clear curves first
+        self.curves.clear()
+        
+        # Remove base lines
+        if base_line_ids:
+            self.lines = [l for l in self.lines if l.get('id') not in base_line_ids]
+        
+        try:
+            self.curves_label.config(text=f"Curves: {len(self.curves)}")
+        except Exception:
+            pass
+        try:
+            self.lines_label.config(text=f"Lines: {len(self.lines)}")
+        except Exception:
+            pass
+        
+        if self.pdf_doc:
+            try:
+                self.redraw_markers()
+            except Exception:
+                self.display_page()
+        
+        try:
+            if hasattr(self, 'refresh_editor_lists'):
+                self.refresh_editor_lists()
+        except Exception:
+            pass
+        
+        try:
+            if hasattr(self, 'update_3d_plot'):
+                self.update_3d_plot()
+        except Exception:
+            pass
+        
+        msg = f"Curves cleared"
+        if base_line_ids:
+            msg += f" (and {len(base_line_ids)} base line(s))"
+        msg += " (use Edit → Undo Clear to restore)"
+        self.update_status(msg)
+
+    def undo_clear(self):
+        """Restore data from the last clear operation."""
+        if not hasattr(self, '_undo_snapshot') or not self._undo_snapshot:
+            messagebox.showinfo("Nothing to Undo", "No clear operation to undo.")
+            return
+        
+        snapshot = self._undo_snapshot
+        op = snapshot.get('operation', 'unknown')
+        
+        # Restore data based on operation type
+        if op == 'clear_all':
+            self.user_points = snapshot.get('points', [])
+            self.lines = snapshot.get('lines', [])
+            self.curves = snapshot.get('curves', [])
+            msg = "Restored all points, lines, and curves"
+        elif op == 'clear_lines':
+            self.lines = snapshot.get('lines', [])
+            msg = "Restored all lines"
+        elif op == 'clear_curves':
+            # Restore curves and their base lines
+            self.curves = snapshot.get('curves', [])
+            base_lines = snapshot.get('base_lines', [])
+            if base_lines:
+                # Add back the base lines that were removed
+                self.lines.extend(base_lines)
+                msg = f"Restored all curves and {len(base_lines)} base line(s)"
+            else:
+                msg = "Restored all curves"
+        else:
+            messagebox.showerror("Undo Failed", "Unknown clear operation type.")
+            return
+        
+        # Clear the undo buffer (single-level undo only)
+        self._undo_snapshot = None
+        
+        # Update UI
+        try:
+            self.update_points_label()
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'update_lines_label'):
+                self.update_lines_label()
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'update_curves_label'):
+                self.update_curves_label()
+        except Exception:
+            pass
+        
+        if self.pdf_doc:
+            try:
+                self.redraw_markers()
+            except Exception:
+                self.display_page()
+        
+        try:
+            if hasattr(self, 'refresh_editor_lists'):
+                self.refresh_editor_lists()
+        except Exception:
+            pass
+        
+        try:
+            if hasattr(self, 'update_3d_plot'):
+                self.update_3d_plot()
+        except Exception:
+            pass
+        
+        self.update_status(msg)
+        messagebox.showinfo("Undo Complete", msg)
 
 
     def label_all_elements(self):

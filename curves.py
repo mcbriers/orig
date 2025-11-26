@@ -4,8 +4,6 @@ from math import atan2, cos, sin, sqrt
 class CurvesMixin:
     # Removed older/buggy handlers; keep the working `handle_curves_click`
 
-
-
     def handle_curves_click(self, canvas_x, canvas_y):
         if not self.user_points:
             self.update_status("No points available — add coordinates first.")
@@ -105,11 +103,25 @@ class CurvesMixin:
             arc_points_pdf = [p_start] + arc_points_pdf + [p_end]
             arc_points_real = []
             arc_point_ids = []
-            z_level = self.elevation_var.get()
+            # Determine integer z-level: prefer start/end point z if available, else elevation_var; fallback 0
+            def to_int(val, default=None):
+                try:
+                    return int(round(float(val)))
+                except Exception:
+                    return default
+            z_candidate = start_point.get('z') if 'z' in start_point else None
+            z_val = to_int(z_candidate)
+            if z_val is None:
+                z_candidate = end_point.get('z') if 'z' in end_point else None
+                z_val = to_int(z_candidate)
+            if z_val is None:
+                z_val = to_int(self.elevation_var.get(), default=0)
             for px, py in arc_points_pdf:
                 real_x, real_y = self.transform_point(px, py)
-                # store Z with real coordinates so 3D plotting can use the correct elevation
-                arc_points_real.append((np.round(real_x, 2), np.round(real_y, 2), float(z_level)))
+                # store integer X,Y for display/export and integer Z for 3D plotting
+                rx = int(round(real_x))
+                ry = int(round(real_y))
+                arc_points_real.append((rx, ry, z_val))
                 if (px, py) == p_start:
                     # Reuse start point ID
                     arc_point_ids.append(start_point['id'])
@@ -124,9 +136,9 @@ class CurvesMixin:
                         'id': new_pid,
                         'pdf_x': px,
                         'pdf_y': py,
-                        'real_x': np.round(real_x, 2),
-                        'real_y': np.round(real_y, 2),
-                        'z': z_level
+                        'real_x': int(round(real_x)),
+                        'real_y': int(round(real_y)),
+                        'z': z_val
                     }
                     self.user_points.append(point)
                     arc_point_ids.append(new_pid)
@@ -159,6 +171,7 @@ class CurvesMixin:
                     text_id = self.canvas.create_text(mid_x, text_y, text=str(new_lid), fill="orange", tags="line_label", font=("Helvetica", 16))
                     line_entry['text_id'] = text_id
                     self.lines.append(line_entry)
+                    self.mark_modified()
                     base_line_id = new_lid
                 except Exception:
                     base_line_id = 0
@@ -174,10 +187,11 @@ class CurvesMixin:
                 'arc_point_ids': arc_point_ids,
                 'canvas_id': None,
                 'arc_point_marker_ids': [],
-                'z_level': z_level,
+                'z_level': z_val,
                 'hidden': False
             }
             self.curves.append(curve_data)
+            self.mark_modified()
             self.update_status(f"Curve {curve_data['id']} created with radius {radius:.2f}. Total points: {len(self.user_points)}")
             self.update_points_label()
             # Ensure editor lists and 2D markers reflect the new curve immediately
