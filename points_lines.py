@@ -276,25 +276,21 @@ class PointsLinesMixin:
                 self.allocator.reset()
         except Exception:
             pass
-        self.points_label.config(text="Points: 0")
         try:
-            self.lines_label.config(text=f"Lines: {len(self.lines)}")
+            self.update_points_label()
         except Exception:
-            pass
+            if hasattr(self, 'points_label') and self.points_label is not None:
+                self.points_label.config(text="Points: 0")
         try:
-            self.curves_label.config(text=f"Curves: {len(self.curves)}")
+            self.update_lines_label()
         except Exception:
-            pass
+            if hasattr(self, 'lines_label') and self.lines_label is not None:
+                self.lines_label.config(text=f"Lines: {len(self.lines)}")
         try:
-            if hasattr(self, 'update_lines_label'):
-                self.update_lines_label()
+            self.update_curves_label()
         except Exception:
-            pass
-        try:
-            if hasattr(self, 'update_curves_label'):
-                self.update_curves_label()
-        except Exception:
-            pass
+            if hasattr(self, 'curves_label') and self.curves_label is not None:
+                self.curves_label.config(text=f"Curves: {len(self.curves)}")
         if self.pdf_doc:
             self.display_page()
         
