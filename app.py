@@ -391,6 +391,9 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         self._line_audit_summary_label = None
         self._line_audit_last_start = ""
         self._line_audit_highlights = {'lines': set(), 'curves': set(), 'endpoints': set()}
+        # 3D point selection state
+        self._3d_selected_point_id = None
+        self._3d_selection_annotation = None
 
     def _init_3d_canvas(self):
         if self._3d_initialized:
@@ -455,6 +458,11 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             w.bind("<MouseWheel>", self._on_3d_mousewheel)
             w.bind("<Button-4>", self._on_3d_mousewheel)
             w.bind("<Button-5>", self._on_3d_mousewheel)
+        except Exception:
+            pass
+        # Connect button_press_event for point picking
+        try:
+            self._3d_canvas.mpl_connect('button_press_event', self._on_3d_click)
         except Exception:
             pass
         self._3d_initialized = True
@@ -2427,6 +2435,24 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 except Exception:
                     pass
 
+        # Highlight selected point (if any)
+        if self._3d_selected_point_id:
+            selected_point = point_lookup.get(self._3d_selected_point_id)
+            if selected_point and not selected_point.get('hidden', False):
+                sx = selected_point.get('real_x', selected_point.get('pdf_x', 0))
+                sy = -(selected_point.get('real_y', selected_point.get('pdf_y', 0)))
+                sz = float(selected_point.get('z', 0))
+                try:
+                    # Draw selection highlight with distinctive color and size
+                    ax.scatter([sx], [sy], [sz], c='#00ff00', s=self._3d_point_size * 2.0, 
+                              marker='o', edgecolors='black', linewidths=2, depthshade=False, zorder=1000)
+                    # Add text annotation
+                    label_color = 'white' if self._3d_theme == 'dark' else 'black'
+                    ax.text(sx, sy, sz + 0.02, f"Selected: {self._3d_selected_point_id}", 
+                           color=label_color, fontsize=10, weight='bold')
+                except Exception:
+                    pass
+
         # Plot lines (use safe lookups so missing keys don't abort the entire 3D update)
         for line in self.lines:
             try:
@@ -2605,6 +2631,106 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                     pass
         except Exception:
             pass
+
+    def _on_3d_click(self, event):
+        """Handle mouse clicks in the 3D view to select points."""
+        print(f"3D click event: button={event.button}, inaxes={event.inaxes == self._3d_ax if hasattr(self, '_3d_ax') else 'no ax'}")
+        
+        if not self._3d_initialized:
+            print("3D not initialized")
+            return
+            
+        if event.inaxes != self._3d_ax:
+            print(f"Click outside axes: event.inaxes={event.inaxes}, self._3d_ax={self._3d_ax}")
+            return
+            
+        # Only handle left clicks (button==1)
+        if event.button != 1:
+            print(f"Ignoring non-left click: button={event.button}")
+            return
+        
+        try:
+            # Get click position in display (pixel) coordinates
+            print(f"Click coordinates: x={event.x}, y={event.y}, xdata={event.xdata}, ydata={event.ydata}")
+            
+            if event.x is None or event.y is None:
+                print("Click coordinates are None")
+                return
+            
+            click_display_x = event.x
+            click_display_y = event.y
+            
+            # Find nearest point by projecting all points to screen space
+            min_dist = float('inf')
+            nearest_point = None
+            debug_count = 0
+            
+            for point in self.user_points:
+                if point.get('hidden', False):
+                    continue
+                px = point.get('real_x', point.get('pdf_x', 0))
+                py = -(point.get('real_y', point.get('pdf_y', 0)))
+                pz = float(point.get('z', 0))
+                
+                # Project point to 2D screen space (display coordinates)
+                try:
+                    # For 3D plots, use proj3d to convert 3D coords to 2D display coords
+                    from mpl_toolkits.mplot3d import proj3d
+                    proj_x, proj_y, _ = proj3d.proj_transform(px, py, pz, self._3d_ax.get_proj())
+                    
+                    # Convert from normalized coordinates to display pixels
+                    # The projection gives us normalized coordinates, we need to transform to display
+                    display_coords = self._3d_ax.transData.transform([(proj_x, proj_y)])[0]
+                    proj_x_display = display_coords[0]
+                    proj_y_display = display_coords[1]
+                    
+                    # Calculate pixel distance between click and projected point
+                    dist = ((proj_x_display - click_display_x)**2 + (proj_y_display - click_display_y)**2)**0.5
+                    
+                    if debug_count < 3:  # Show first 3 points for debugging
+                        print(f"Point {point.get('id')}: 3D=({px:.1f},{py:.1f},{pz:.1f}) -> 2D=({proj_x_display:.1f},{proj_y_display:.1f}), dist={dist:.1f}px")
+                        debug_count += 1
+                    
+                    if dist < min_dist:
+                        min_dist = dist
+                        nearest_point = point
+                except Exception as e:
+                    # If projection fails, skip this point
+                    if debug_count < 3:
+                        print(f"Point {point.get('id')} projection failed: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        debug_count += 1
+                    continue
+            
+            print(f"Nearest point: {nearest_point.get('id') if nearest_point else None}, distance: {min_dist:.1f}px")
+            
+            # Selection threshold in pixels (increased for easier selection)
+            if min_dist > 500:  # pixels
+                # Provide feedback when no point is close enough
+                self.update_status(f"No point within selection range (nearest: {min_dist:.0f}px)")
+                return
+            
+            if nearest_point:
+                self._3d_selected_point_id = nearest_point.get('id')
+                
+                # If line audit window is open, populate the start field and auto-run audit
+                if self._line_audit_window and self._line_audit_window.winfo_exists():
+                    if self._line_audit_start_var:
+                        self._line_audit_start_var.set(str(self._3d_selected_point_id))
+                        # Automatically run the audit with the newly selected point
+                        try:
+                            self._run_line_audit_from_ui()
+                        except Exception as e:
+                            print(f"Auto-run audit failed: {e}")
+                
+                # Update status and redraw with highlight
+                self.update_status(f"Selected point {self._3d_selected_point_id} in 3D view (distance: {min_dist:.0f}px)")
+                self.update_3d_plot()
+        except Exception as e:
+            print(f"3D click handler error: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _on_3d_mpl_scroll(self, event):
         """Matplotlib scroll_event handler fallback for zooming the 3D view."""
@@ -4352,9 +4478,11 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         win = tk.Toplevel(self.master)
         win.title("Line Audit")
         win.geometry("620x460")
-        win.transient(self.master)
+        # Don't make it transient or modal - let it float freely
         self._line_audit_window = win
         win.protocol("WM_DELETE_WINDOW", self._close_line_audit_window)
+        # Keep window on top for easy access
+        win.attributes('-topmost', True)
 
         container = tk.Frame(win, padx=10, pady=10)
         container.pack(fill='both', expand=True)
@@ -4401,11 +4529,19 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
 
         info = tk.Label(
             container,
-            text="Routes are highlighted in bright magenta inside the 3D view until cleared.",
+            text="Routes are highlighted in bright magenta. Click points in 3D view to auto-audit.",
             anchor='w',
             fg='#555555'
         )
         info.pack(fill='x', pady=(4, 0))
+        
+        # Position window to the right side of the screen for easy access
+        try:
+            win.update_idletasks()
+            screen_width = win.winfo_screenwidth()
+            win.geometry(f"+{screen_width - 640}+50")
+        except Exception:
+            pass
 
     def _refresh_line_audit_point_choices(self):
         if not self._line_audit_point_combo:
@@ -4590,13 +4726,14 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             'highlight_curves': highlight_curves
         }
 
-    def clear_line_audit_highlights(self):
+    def clear_line_audit_highlights(self, silent=False):
         self._line_audit_highlights = {'lines': set(), 'curves': set(), 'endpoints': set()}
         try:
             self.update_3d_plot()
         except Exception:
             pass
-        self.update_status("Line audit highlights cleared.")
+        if not silent:
+            self.update_status("Line audit highlights cleared.")
 
     def _close_line_audit_window(self):
         try:
@@ -4604,10 +4741,11 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 self._line_audit_window.destroy()
         finally:
             self._line_audit_window = None
+            self._line_audit_start_var = None
             self._line_audit_point_combo = None
             self.line_audit_results_tv = None
             self._line_audit_summary_label = None
-            self.clear_line_audit_highlights()
+            self.clear_line_audit_highlights(silent=True)
 
 
     def hide_all_elements(self):
