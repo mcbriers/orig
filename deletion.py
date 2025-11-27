@@ -208,23 +208,14 @@ class DeletionMixin:
 
     def delete_curve(self, curve):
         cid = curve.get('id')
-        # Delete arc points associated with this curve
-        for arc_point_id in list(curve.get('arc_point_ids', [])):
-            self.user_points = [p for p in self.user_points if p.get('id') != arc_point_id]
-            # remove markers if present
-            try:
-                if arc_point_id in self.point_markers:
-                    self.canvas.delete(self.point_markers[arc_point_id])
-                    del self.point_markers[arc_point_id]
-            except Exception:
-                pass
+        arc_point_ids = list(dict.fromkeys(curve.get('arc_point_ids', [])))
 
-        # Remove the curve entry
+        # Remove the curve entry first so reference checks ignore it
         self.curves = [c for c in self.curves if c.get('id') != cid]
 
         # Delete curve canvas items
         try:
-            if 'canvas_id' in curve and curve.get('canvas_id'):
+            if curve.get('canvas_id'):
                 self.canvas.delete(curve['canvas_id'])
         except Exception:
             pass
@@ -244,6 +235,10 @@ class DeletionMixin:
                 except Exception:
                     self.lines = [ll for ll in self.lines if ll.get('id') != base_line_id]
 
+        # Drop any arc points that are now orphaned (no remaining references)
+        for arc_point_id in arc_point_ids:
+            self._remove_orphan_curve_point(arc_point_id)
+
         # Log curve deletion
         try:
             self.deletion_log.append({'action': 'delete_curve', 'curve_id': cid, 'time': datetime.now().isoformat()})
@@ -254,6 +249,41 @@ class DeletionMixin:
             self.update_3d_plot()
         except Exception:
             pass
+
+    def _point_has_other_references(self, point_id):
+        for line in self.lines:
+            if line.get('start_id') == point_id or line.get('end_id') == point_id:
+                return True
+        for curve in self.curves:
+            if curve.get('start_id') == point_id or curve.get('end_id') == point_id:
+                return True
+            if point_id in curve.get('arc_point_ids', []):
+                return True
+        return False
+
+    def _remove_orphan_curve_point(self, point_id):
+        if point_id is None:
+            return False
+        point = next((p for p in self.user_points if p.get('id') == point_id), None)
+        if not point:
+            return False
+        if self._point_has_other_references(point_id):
+            return False
+
+        self.user_points = [p for p in self.user_points if p.get('id') != point_id]
+
+        try:
+            if hasattr(self, 'point_markers') and point_id in self.point_markers:
+                self.canvas.delete(self.point_markers[point_id])
+                del self.point_markers[point_id]
+        except Exception:
+            pass
+
+        try:
+            self.deletion_log.append({'action': 'delete_orphan_point', 'point_id': point_id, 'time': datetime.now().isoformat(), 'source': 'curve'})
+        except Exception:
+            pass
+        return True
 
     def delete_selected(self):
         if not self.selected_item:

@@ -25,6 +25,12 @@ class IDAllocator:
         self.curve_counter += 1
         return cid
 
+    def reset(self, start_point: int = 1, start_line: int = 1, start_curve: int = 1) -> None:
+        """Reset all counters to the provided starting values (defaults to 1)."""
+        self.point_counter = int(start_point)
+        self.line_counter = int(start_line)
+        self.curve_counter = int(start_curve)
+
     def to_dict(self) -> Dict[str, int]:
         return {'point_counter': self.point_counter, 'line_counter': self.line_counter, 'curve_counter': self.curve_counter}
 

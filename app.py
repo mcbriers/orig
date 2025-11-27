@@ -207,14 +207,24 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         view_menu.add_command(label="Options...", command=self.open_display_options)
         menu_bar.add_cascade(label="View", menu=view_menu)
 
-        main_frame = tk.Frame(self.master)
+        # Tools menu
+        tools_menu = tk.Menu(menu_bar, tearoff=0)
+        tools_menu.add_command(label="Audit Project...", command=self.audit_project)
+        tools_menu.add_command(label="Line Audit...", command=self.open_line_audit_tool)
+        menu_bar.add_cascade(label="Tools", menu=tools_menu)
+
+        main_frame = tk.PanedWindow(self.master, orient='horizontal')
         main_frame.pack(fill="both", expand=True)
+
+        # Left content frame (holds notebook)
+        content_frame = tk.Frame(main_frame)
+        main_frame.add(content_frame, stretch='always')
 
         # Left: Notebook with 2D view and 3D view
         # Style notebook tabs to be wider
         style = ttk.Style()
         style.configure('TNotebook.Tab', padding=[20, 8])
-        self.notebook = ttk.Notebook(main_frame)
+        self.notebook = ttk.Notebook(content_frame)
         self.notebook.pack(side="left", fill="both", expand=True)
 
         # 2D view tab
@@ -256,8 +266,8 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         # Handle window close button
         self.master.protocol("WM_DELETE_WINDOW", self.on_exit)
 
-        control_panel = tk.Frame(main_frame, width=250, bg="lightgrey")
-        control_panel.pack(side="right", fill="both", padx=5, pady=5)
+        control_panel = tk.Frame(main_frame, width=320, bg="lightgrey", padx=5, pady=5)
+        main_frame.add(control_panel, stretch='never', minsize=250)
         control_panel.pack_propagate(False)
 
         zoom_frame = tk.LabelFrame(control_panel, text="Zoom", padx=5, pady=5)
@@ -368,10 +378,19 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         self._3d_point_color = 'b'
         self._3d_line_color = 'orange'
         self._3d_curve_color = 'purple'
+        self._3d_highlight_color = '#ff00ff'
         self._3d_theme = 'default'
         self._3d_show_grid = True
         self._3d_elev = 30
         self._3d_azim = -60
+        # Line audit state
+        self._line_audit_window = None
+        self._line_audit_start_var = None
+        self._line_audit_point_combo = None
+        self.line_audit_results_tv = None
+        self._line_audit_summary_label = None
+        self._line_audit_last_start = ""
+        self._line_audit_highlights = {'lines': set(), 'curves': set(), 'endpoints': set()}
 
     def _init_3d_canvas(self):
         if self._3d_initialized:
@@ -505,17 +524,21 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         points_frame.grid_columnconfigure(0, weight=1)
         tk.Label(points_frame, text='Points').grid(row=0, column=0, sticky='w')
         # Points treeview: include a 'Refs' column showing how many entities reference each point
-        self.points_tv = ttk.Treeview(points_frame, columns=('id', 'coords', 'refs', 'z', 'description', 'hidden'), show='headings', height=24, selectmode='extended')
+        self.points_tv = ttk.Treeview(points_frame, columns=('id', 'coords', 'x', 'y', 'z', 'refs', 'description', 'hidden'), show='headings', height=24, selectmode='extended')
         self.points_tv.heading('id', text='ID', command=lambda c='id': self._treeview_sort(self.points_tv, c))
         self.points_tv.heading('coords', text='Coords', command=lambda c='coords': self._treeview_sort(self.points_tv, c))
-        self.points_tv.heading('refs', text='Refs', command=lambda c='refs': self._treeview_sort(self.points_tv, c))
+        self.points_tv.heading('x', text='X', command=lambda c='x': self._treeview_sort(self.points_tv, c))
+        self.points_tv.heading('y', text='Y', command=lambda c='y': self._treeview_sort(self.points_tv, c))
         self.points_tv.heading('z', text='Z', command=lambda c='z': self._treeview_sort(self.points_tv, c))
+        self.points_tv.heading('refs', text='Refs', command=lambda c='refs': self._treeview_sort(self.points_tv, c))
         self.points_tv.heading('description', text='Description', command=lambda c='description': self._treeview_sort(self.points_tv, c))
         self.points_tv.heading('hidden', text='Hidden', command=lambda c='hidden': self._treeview_sort(self.points_tv, c))
         self.points_tv.column('id', width=40, anchor='center')
         self.points_tv.column('coords', width=100)
+        self.points_tv.column('x', width=60, anchor='center')
+        self.points_tv.column('y', width=60, anchor='center')
+        self.points_tv.column('z', width=60, anchor='center')
         self.points_tv.column('refs', width=60, anchor='center')
-        self.points_tv.column('z', width=50, anchor='center')
         self.points_tv.column('description', width=120)
         self.points_tv.column('hidden', width=50, anchor='center')
         # add a vertical scrollbar so users see when more rows are available
@@ -538,16 +561,18 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         editor_area.grid_columnconfigure(1, weight=1)
         lines_frame.grid_columnconfigure(0, weight=1)
         tk.Label(lines_frame, text='Lines').grid(row=0, column=0, sticky='w')
-        self.lines_tv = ttk.Treeview(lines_frame, columns=('id', 'from', 'to', 'z', 'hidden'), show='headings', height=24, selectmode='extended')
+        self.lines_tv = ttk.Treeview(lines_frame, columns=('id', 'from', 'to', 'z', 'curve', 'hidden'), show='headings', height=24, selectmode='extended')
         self.lines_tv.heading('id', text='ID', command=lambda c='id': self._treeview_sort(self.lines_tv, c))
         self.lines_tv.heading('from', text='From', command=lambda c='from': self._treeview_sort(self.lines_tv, c))
         self.lines_tv.heading('to', text='To', command=lambda c='to': self._treeview_sort(self.lines_tv, c))
         self.lines_tv.heading('z', text='Z', command=lambda c='z': self._treeview_sort(self.lines_tv, c))
+        self.lines_tv.heading('curve', text='Curve', command=lambda c='curve': self._treeview_sort(self.lines_tv, c))
         self.lines_tv.heading('hidden', text='Hidden', command=lambda c='hidden': self._treeview_sort(self.lines_tv, c))
         self.lines_tv.column('id', width=40, anchor='center')
         self.lines_tv.column('from', width=80, anchor='center')
         self.lines_tv.column('to', width=80, anchor='center')
         self.lines_tv.column('z', width=60, anchor='center')
+        self.lines_tv.column('curve', width=70, anchor='center')
         self.lines_tv.column('hidden', width=50, anchor='center')
         # add vertical scrollbar for lines treeview
         lines_v = ttk.Scrollbar(lines_frame, orient='vertical', command=self.lines_tv.yview)
@@ -565,14 +590,18 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         editor_area.grid_columnconfigure(2, weight=1)
         curves_frame.grid_columnconfigure(0, weight=1)
         tk.Label(curves_frame, text='Curves').grid(row=0, column=0, sticky='w')
-        self.curves_tv = ttk.Treeview(curves_frame, columns=('id', 'pts', 'z', 'hidden'), show='headings', height=24, selectmode='extended')
-        self.curves_tv.heading('id', text='ID', command=lambda c='id': self._treeview_sort(self.curves_tv, c))
-        self.curves_tv.heading('pts', text='Points', command=lambda c='pts': self._treeview_sort(self.curves_tv, c))
-        self.curves_tv.heading('z', text='Z', command=lambda c='z': self._treeview_sort(self.curves_tv, c))
+        self.curves_tv = ttk.Treeview(curves_frame, columns=('curve', 'position', 'point', 'baseline', 'z', 'hidden'), show='headings', height=24, selectmode='extended')
+        self.curves_tv.heading('curve', text='Curve', command=lambda c='curve': self._treeview_sort(self.curves_tv, c))
+        self.curves_tv.heading('position', text='Position', command=lambda c='position': self._treeview_sort(self.curves_tv, c))
+        self.curves_tv.heading('point', text='Point ID', command=lambda c='point': self._treeview_sort(self.curves_tv, c))
+        self.curves_tv.heading('baseline', text='Base Line', command=lambda c='baseline': self._treeview_sort(self.curves_tv, c))
+        self.curves_tv.heading('z', text='Z Level', command=lambda c='z': self._treeview_sort(self.curves_tv, c))
         self.curves_tv.heading('hidden', text='Hidden', command=lambda c='hidden': self._treeview_sort(self.curves_tv, c))
-        self.curves_tv.column('id', width=40, anchor='center')
-        self.curves_tv.column('pts', width=80, anchor='center')
-        self.curves_tv.column('z', width=50, anchor='center')
+        self.curves_tv.column('curve', width=60, anchor='center')
+        self.curves_tv.column('position', width=70, anchor='center')
+        self.curves_tv.column('point', width=80, anchor='center')
+        self.curves_tv.column('baseline', width=80, anchor='center')
+        self.curves_tv.column('z', width=70, anchor='center')
         self.curves_tv.column('hidden', width=50, anchor='center')
         # add vertical scrollbar for curves treeview
         cur_v = ttk.Scrollbar(curves_frame, orient='vertical', command=self.curves_tv.yview)
@@ -687,7 +716,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         try:
             self._treeview_sort(self.points_tv, 'id')
             self._treeview_sort(self.lines_tv, 'id')
-            self._treeview_sort(self.curves_tv, 'id')
+            self._treeview_sort(self.curves_tv, 'curve')
             # no default sort for RFID (empty)
         except Exception:
             pass
@@ -937,7 +966,10 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             for it in self.points_tv.get_children():
                 self.points_tv.delete(it)
             for p in self.user_points:
-                coords = f"({p.get('real_x', p.get('pdf_x'))}, {p.get('real_y', p.get('pdf_y'))})"
+                real_x = p.get('real_x', p.get('pdf_x'))
+                real_y = p.get('real_y', p.get('pdf_y'))
+                z_val = p.get('z', 0)
+                coords = f"({real_x}, {real_y})"
                 hidden_mark = '✓' if p.get('hidden', False) else ''
                 # count references from lines and curves
                 try:
@@ -955,7 +987,7 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                     refs = 0
                 description = p.get('description', '3D Visualisation')
                 tags = ('new',) if p.get('just_duplicated') else ()
-                self.points_tv.insert('', 'end', iid=f"p_{p['id']}", values=(p['id'], coords, refs, p.get('z', 0), description, hidden_mark), tags=tags)
+                self.points_tv.insert('', 'end', iid=f"p_{p['id']}", values=(p['id'], coords, real_x, real_y, z_val, refs, description, hidden_mark), tags=tags)
         except Exception:
             pass
 
@@ -979,7 +1011,9 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                             zval = (float(s.get('z', 0)) + float(e.get('z', 0))) / 2.0
                 except Exception:
                     zval = ''
-                self.lines_tv.insert('', 'end', iid=f"l_{l['id']}", values=(l['id'], start, end, zval, hidden_mark))
+                related_curves = [c.get('id') for c in self.curves if c.get('base_line_id') == l.get('id')]
+                curve_display = ','.join(map(str, related_curves)) if related_curves else ''
+                self.lines_tv.insert('', 'end', iid=f"l_{l['id']}", values=(l['id'], start, end, zval, curve_display, hidden_mark))
         except Exception:
             pass
 
@@ -987,11 +1021,38 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         try:
             for it in self.curves_tv.get_children():
                 self.curves_tv.delete(it)
+
+            total_positions = max(2, int(getattr(self, 'curve_interior_points', 4)) + 2)
+
             for c in self.curves:
-                pts = len(c.get('arc_point_ids', []))
+                curve_id = c.get('id')
                 zval = c.get('z_level', c.get('z', 0))
                 hidden_mark = '✓' if c.get('hidden', False) else ''
-                self.curves_tv.insert('', 'end', iid=f"c_{c['id']}", values=(c['id'], pts, zval, hidden_mark))
+
+                line_id = next((l['id'] for l in self.lines if
+                                (l['start_id'] == c.get('start_id') and l['end_id'] == c.get('end_id')) or
+                                (l['start_id'] == c.get('end_id') and l['end_id'] == c.get('start_id'))
+                                ), 0)
+                base_line_id = c.get('base_line_id', line_id)
+
+                ids = list(c.get('arc_point_ids', []))
+                if not ids:
+                    ids = []
+
+                for position in range(total_positions):
+                    if position < len(ids):
+                        pid = ids[position]
+                    elif ids:
+                        pid = ids[-1]
+                    else:
+                        pid = ''
+
+                    self.curves_tv.insert(
+                        '',
+                        'end',
+                        iid=f"c_{curve_id}_{position}",
+                        values=(curve_id, position, pid, base_line_id, zval, hidden_mark)
+                    )
         except Exception:
             pass
 
@@ -1262,18 +1323,18 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             except Exception:
                 # fallback to previous mappings
                 if widget is self.points_tv:
-                    cols = ('id', 'coords', 'refs', 'z', 'hidden')
+                    cols = ('id', 'coords', 'x', 'y', 'z', 'refs', 'description', 'hidden')
                 elif widget is self.lines_tv:
-                    cols = ('id', 'from', 'to', 'z', 'hidden')
+                    cols = ('id', 'from', 'to', 'z', 'curve', 'hidden')
                 elif widget is self.curves_tv:
-                    cols = ('id', 'pts', 'z', 'hidden')
+                    cols = ('curve', 'position', 'point', 'baseline', 'z', 'hidden')
                 else:
                     return
             if col_index < 0 or col_index >= len(cols):
                 return
             key = cols[col_index]
             # do not edit ID column
-            if key == 'id' or key == 'pts':
+            if key in ('id', 'pts', 'curve', 'position', 'point', 'baseline'):
                 return
             bbox = widget.bbox(row, column=col)
             if not bbox:
@@ -2314,6 +2375,11 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         all_x = []
         all_y = []
         all_z = []
+        point_lookup = {p.get('id'): p for p in self.user_points if p.get('id') is not None}
+        highlight_info = getattr(self, '_line_audit_highlights', None) or {}
+        highlight_line_ids = set(highlight_info.get('lines', set()))
+        highlight_curve_ids = set(highlight_info.get('curves', set()))
+        highlight_endpoints = set(highlight_info.get('endpoints', set()))
 
         # Plot points (mirror along Y by negating Y coordinates)
         pts = [p for p in self.user_points if not p.get('hidden', False)]
@@ -2337,6 +2403,30 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             except Exception:
                 pass
 
+        # Overlay highlighted endpoints (if any)
+        if highlight_endpoints:
+            hx = []
+            hy = []
+            hz = []
+            for pid in highlight_endpoints:
+                point = point_lookup.get(pid)
+                if not point:
+                    continue
+                px = point.get('real_x', point.get('pdf_x', 0))
+                py = -(point.get('real_y', point.get('pdf_y', 0)))
+                pz = float(point.get('z', 0))
+                hx.append(px)
+                hy.append(py)
+                hz.append(pz)
+                all_x.append(px)
+                all_y.append(py)
+                all_z.append(pz)
+            if hx and hy and hz:
+                try:
+                    ax.scatter(hx, hy, hz, c=self._3d_highlight_color, s=self._3d_point_size * 1.6, depthshade=False)
+                except Exception:
+                    pass
+
         # Plot lines (use safe lookups so missing keys don't abort the entire 3D update)
         for line in self.lines:
             try:
@@ -2353,8 +2443,11 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 ex = end.get('real_x', end.get('pdf_x', 0.0))
                 ey = -(end.get('real_y', end.get('pdf_y', 0.0)))
                 ez = float(end.get('z', 0.0))
+                highlighted = line.get('id') in highlight_line_ids if line.get('id') is not None else False
+                line_color = self._3d_highlight_color if highlighted else self._3d_line_color
+                line_width = 6 if highlighted else 2
 
-                ax.plot([sx, ex], [sy, ey], [sz, ez], c=self._3d_line_color)
+                ax.plot([sx, ex], [sy, ey], [sz, ez], c=line_color, linewidth=line_width)
 
                 # Add a label at the midpoint of the line
                 try:
@@ -2414,7 +2507,10 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             xs = [t[0] for t in pts]
             ys = [-(t[1]) for t in pts]
             zs = [t[2] for t in pts]
-            ax.plot(xs, ys, zs, c=self._3d_curve_color)
+            highlighted = curve.get('id') in highlight_curve_ids if curve.get('id') is not None else False
+            curve_color = self._3d_highlight_color if highlighted else self._3d_curve_color
+            curve_width = 6 if highlighted else 2
+            ax.plot(xs, ys, zs, c=curve_color, linewidth=curve_width)
             all_x.extend(xs)
             all_y.extend(ys)
             all_z.extend(zs)
@@ -3475,7 +3571,13 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             return
 
         from tkinter import simpledialog
-        project_name = simpledialog.askstring("Project Name", "Enter project name for export:")
+        
+        # Propose project name based on current file
+        default_name = ""
+        if self._project_path:
+            default_name = os.path.splitext(os.path.basename(self._project_path))[0]
+            
+        project_name = simpledialog.askstring("Project Name", "Enter project name for export:", initialvalue=default_name)
         if not project_name:
             return
 
@@ -3698,8 +3800,8 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
 
             # Curves table
             f.write("-- Insert Visualization_Curve (Curves)\n")
-            f.write("SET IDENTITY_INSERT SeasPathDB.dbo.Visualization_Curve ON;\n")
-            curve_row_id = 1
+            # Id column removed as requested
+            # f.write("SET IDENTITY_INSERT SeasPathDB.dbo.Visualization_Curve ON;\n")
             for curve in self.curves:
                 line_id = next((l['id'] for l in self.lines if
                                 (l['start_id'] == curve.get('start_id') and l['end_id'] == curve.get('end_id')) or
@@ -3709,10 +3811,9 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 ids = curve.get('arc_point_ids', [])
                 for position in range(total_positions):
                     pid = ids[position] if position < len(ids) else ids[-1]
-                    f.write(f"INSERT INTO SeasPathDB.dbo.Visualization_Curve (Id, PositionNumber, CoordinateId, EdgeId) ")
-                    f.write(f"VALUES ({curve_row_id}, {position}, {pid}, {edge_id});\n")
-                    curve_row_id += 1
-            f.write("SET IDENTITY_INSERT SeasPathDB.dbo.Visualization_Curve OFF;\n")
+                    f.write(f"INSERT INTO SeasPathDB.dbo.Visualization_Curve (PositionNumber, CoordinateId, EdgeId) ")
+                    f.write(f"VALUES ({position}, {pid}, {edge_id});\n")
+            # f.write("SET IDENTITY_INSERT SeasPathDB.dbo.Visualization_Curve OFF;\n")
 
         messagebox.showinfo("Export Success", f"Exported data to {export_dir}\nFiles: {project_name}_points.txt, {project_name}_lines.txt, {project_name}_curves.txt, {project_name}_insert.sql")
 
@@ -3844,8 +3945,15 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         
         # Ask for output file
         from tkinter import filedialog
+        
+        initial_file = "export.png"
+        if self._project_path:
+            base = os.path.splitext(os.path.basename(self._project_path))[0]
+            initial_file = f"{base}.png"
+            
         output_path = filedialog.asksaveasfilename(
             defaultextension=".png",
+            initialfile=initial_file,
             filetypes=[("PNG files", "*.png"), ("All files", "*.*")],
             title="Save PDF page as PNG"
         )
@@ -3874,6 +3982,20 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         except Exception as e:
             messagebox.showerror("Export Error", f"Failed to export PDF to PNG:\n{e}")
 
+    def find_point_by_coords(self, real_x, real_y, z):
+        """Return existing point matching integer-rounded coords and z, else None."""
+        try:
+            target = (int(round(real_x)), int(round(real_y)), int(round(z)))
+        except Exception:
+            target = (real_x, real_y, z)
+        for existing in self.user_points:
+            ex = int(round(existing.get('real_x', existing.get('pdf_x', 0))))
+            ey = int(round(existing.get('real_y', existing.get('pdf_y', 0))))
+            ez = int(round(existing.get('z', 0)))
+            if (ex, ey, ez) == target:
+                return existing
+        return None
+
     def duplicate_point(self, point, z_values):
         for z in z_values:
             new_point = point.copy()
@@ -3900,26 +4022,33 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             start = next(p for p in self.user_points if p['id'] == line['start_id'])
             end = next(p for p in self.user_points if p['id'] == line['end_id'])
 
-            # Create new points at new Z level
-            # allocate new start/end point ids
-            # Allocate new start point id via centralized helper
-            start_id = self.next_point_id()
+            # Determine or create start point at new Z level
+            start_real_x = start.get('real_x', start.get('pdf_x', 0))
+            start_real_y = start.get('real_y', start.get('pdf_y', 0))
+            existing_start = self.find_point_by_coords(start_real_x, start_real_y, z)
+            if existing_start:
+                start_id = existing_start['id']
+            else:
+                start_id = self.next_point_id()
+                new_start = start.copy()
+                new_start['id'] = start_id
+                new_start['z'] = z
+                self.user_points.append(new_start)
 
-            new_start = start.copy()
-            new_start['id'] = start_id
-            new_start['z'] = z
-            self.user_points.append(new_start)
-
-            # Allocate new end point id via centralized helper
-            end_id = self.next_point_id()
-
-            new_end = end.copy()
-            new_end['id'] = end_id
-            new_end['z'] = z
-            self.user_points.append(new_end)
+            # Determine or create end point at new Z level
+            end_real_x = end.get('real_x', end.get('pdf_x', 0))
+            end_real_y = end.get('real_y', end.get('pdf_y', 0))
+            existing_end = self.find_point_by_coords(end_real_x, end_real_y, z)
+            if existing_end:
+                end_id = existing_end['id']
+            else:
+                end_id = self.next_point_id()
+                new_end = end.copy()
+                new_end['id'] = end_id
+                new_end['z'] = z
+                self.user_points.append(new_end)
 
             # Create new line id
-            # Allocate new line id via centralized helper
             new_lid = self.next_line_id()
 
             new_line = line.copy()
@@ -3935,17 +4064,36 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             new_arc_point_ids = []
             for arc_point_id in curve['arc_point_ids']:
                 orig_point = next(p for p in self.user_points if p['id'] == arc_point_id)
+                real_x = orig_point.get('real_x', orig_point.get('pdf_x', 0))
+                real_y = orig_point.get('real_y', orig_point.get('pdf_y', 0))
+                existing = self.find_point_by_coords(real_x, real_y, z)
+                if existing:
+                    new_arc_point_ids.append(existing['id'])
+                    continue
                 new_point = orig_point.copy()
-                # Allocate new intermediate arc point id
                 new_pid = self.next_point_id()
                 new_point['id'] = new_pid
                 new_point['z'] = z
                 self.user_points.append(new_point)
                 new_arc_point_ids.append(new_pid)
 
+            # Build new arc_points_real list so 3D view uses the duplicated Z level
+            new_arc_points_real = []
+            for pid in new_arc_point_ids:
+                point_ref = next((p for p in self.user_points if p['id'] == pid), None)
+                if not point_ref:
+                    continue
+                rx = int(round(point_ref.get('real_x', point_ref.get('pdf_x', 0))))
+                ry = int(round(point_ref.get('real_y', point_ref.get('pdf_y', 0))))
+                rz = int(round(point_ref.get('z', z)))
+                new_arc_points_real.append((rx, ry, rz))
+
             # Duplicate the baseline if it exists
             base_line_id = curve.get('base_line_id')
             new_base_line_id = 0
+            new_start_id = None
+            new_end_id = None
+            
             if base_line_id:
                 base_line = next((l for l in self.lines if l.get('id') == base_line_id), None)
                 if base_line:
@@ -3955,32 +4103,55 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                     
                     if start and end:
                         # Create new start point
-                        new_start = start.copy()
-                        new_start['id'] = self.next_point_id()
-                        new_start['z'] = z
-                        self.user_points.append(new_start)
+                        start_real_x = start.get('real_x', start.get('pdf_x', 0))
+                        start_real_y = start.get('real_y', start.get('pdf_y', 0))
+                        existing_start = self.find_point_by_coords(start_real_x, start_real_y, z)
+                        if existing_start:
+                            new_start_id = existing_start['id']
+                        else:
+                            new_start = start.copy()
+                            new_start_id = self.next_point_id()
+                            new_start['id'] = new_start_id
+                            new_start['z'] = z
+                            self.user_points.append(new_start)
                         
                         # Create new end point
-                        new_end = end.copy()
-                        new_end['id'] = self.next_point_id()
-                        new_end['z'] = z
-                        self.user_points.append(new_end)
+                        end_real_x = end.get('real_x', end.get('pdf_x', 0))
+                        end_real_y = end.get('real_y', end.get('pdf_y', 0))
+                        existing_end = self.find_point_by_coords(end_real_x, end_real_y, z)
+                        if existing_end:
+                            new_end_id = existing_end['id']
+                        else:
+                            new_end = end.copy()
+                            new_end_id = self.next_point_id()
+                            new_end['id'] = new_end_id
+                            new_end['z'] = z
+                            self.user_points.append(new_end)
                         
                         # Create new baseline
                         new_base_line = base_line.copy()
                         new_base_line_id = self.next_line_id()
                         new_base_line['id'] = new_base_line_id
-                        new_base_line['start_id'] = new_start['id']
-                        new_base_line['end_id'] = new_end['id']
+                        new_base_line['start_id'] = new_start_id
+                        new_base_line['end_id'] = new_end_id
                         self.lines.append(new_base_line)
 
             # Create new curve
             new_curve = curve.copy()
-            # Allocate new curve id via centralized helper
             new_curve['id'] = self.next_curve_id()
             new_curve['arc_point_ids'] = new_arc_point_ids
+            new_curve['arc_points_real'] = new_arc_points_real
             new_curve['z_level'] = z
             new_curve['base_line_id'] = new_base_line_id
+
+            if new_arc_point_ids:
+                new_curve['start_id'] = new_arc_point_ids[0]
+                new_curve['end_id'] = new_arc_point_ids[-1]
+            if new_start_id is not None:
+                new_curve['start_id'] = new_start_id
+            if new_end_id is not None:
+                new_curve['end_id'] = new_end_id
+                
             self.curves.append(new_curve)
         self.mark_modified()
 
@@ -4079,6 +4250,364 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             f"Remaining points: {len(self.user_points)}"
         )
         self.update_status(f"Merged {merge_count} duplicate points")
+
+    def audit_project(self):
+        """Audit the project for data consistency issues."""
+        issues = []
+        
+        # 1. Check points for duplicates
+        position_map = {}
+        duplicate_points_count = 0
+        for point in self.user_points:
+            # Use same rounding logic as merge
+            x = int(round(point.get('real_x', 0)))
+            y = int(round(point.get('z', 0)))
+            z = int(round(point.get('real_y', 0)))
+            key = (x, y, z)
+            if key in position_map:
+                duplicate_points_count += 1
+            else:
+                position_map[key] = point['id']
+        
+        if duplicate_points_count > 0:
+            issues.append(f"Found {duplicate_points_count} duplicate points (same X, Y, Z).")
+
+        # 2. Check lines for start and end point on the same z level
+        lines_with_z_mismatch = []
+        for line in self.lines:
+            start = next((p for p in self.user_points if p['id'] == line['start_id']), None)
+            end = next((p for p in self.user_points if p['id'] == line['end_id']), None)
+            
+            if start and end:
+                if abs(float(start.get('z', 0)) - float(end.get('z', 0))) > 0.001:
+                    lines_with_z_mismatch.append(line['id'])
+        
+        if lines_with_z_mismatch:
+            issues.append(f"Found {len(lines_with_z_mismatch)} lines with start/end Z mismatch (IDs: {', '.join(map(str, lines_with_z_mismatch[:10]))}{'...' if len(lines_with_z_mismatch) > 10 else ''}).")
+
+        # 3. Check curves start, end, line and circumference points all on same level
+        curves_with_z_mismatch = []
+        for curve in self.curves:
+            curve_z = float(curve.get('z_level', curve.get('z', 0)))
+            mismatch = False
+            
+            # Check start point
+            if 'start_id' in curve:
+                p = next((p for p in self.user_points if p['id'] == curve['start_id']), None)
+                if p and abs(float(p.get('z', 0)) - curve_z) > 0.001:
+                    mismatch = True
+            
+            # Check end point
+            if 'end_id' in curve:
+                p = next((p for p in self.user_points if p['id'] == curve['end_id']), None)
+                if p and abs(float(p.get('z', 0)) - curve_z) > 0.001:
+                    mismatch = True
+            
+            # Check arc points
+            for pid in curve.get('arc_point_ids', []):
+                p = next((p for p in self.user_points if p['id'] == pid), None)
+                if p and abs(float(p.get('z', 0)) - curve_z) > 0.001:
+                    mismatch = True
+            
+            # Check base line
+            base_line_id = curve.get('base_line_id')
+            if base_line_id:
+                line = next((l for l in self.lines if l['id'] == base_line_id), None)
+                if line:
+                    start = next((p for p in self.user_points if p['id'] == line['start_id']), None)
+                    end = next((p for p in self.user_points if p['id'] == line['end_id']), None)
+                    if start and abs(float(start.get('z', 0)) - curve_z) > 0.001:
+                        mismatch = True
+                    if end and abs(float(end.get('z', 0)) - curve_z) > 0.001:
+                        mismatch = True
+            
+            if mismatch:
+                curves_with_z_mismatch.append(curve['id'])
+
+        if curves_with_z_mismatch:
+            issues.append(f"Found {len(curves_with_z_mismatch)} curves with Z level inconsistencies (IDs: {', '.join(map(str, curves_with_z_mismatch[:10]))}{'...' if len(curves_with_z_mismatch) > 10 else ''}).")
+
+        from tkinter import messagebox
+        if not issues:
+            messagebox.showinfo("Project Audit", "Audit passed! No issues found.")
+        else:
+            report = "\n\n".join(issues)
+            messagebox.showwarning("Project Audit", f"Found the following issues:\n\n{report}")
+
+    def open_line_audit_tool(self):
+        if not self.user_points:
+            messagebox.showinfo("Line Audit", "Please add points before running the line audit.")
+            return
+
+        if self._line_audit_window and self._line_audit_window.winfo_exists():
+            try:
+                self._line_audit_window.deiconify()
+                self._line_audit_window.lift()
+                self._line_audit_window.focus_set()
+            except Exception:
+                pass
+            self._refresh_line_audit_point_choices()
+            return
+
+        win = tk.Toplevel(self.master)
+        win.title("Line Audit")
+        win.geometry("620x460")
+        win.transient(self.master)
+        self._line_audit_window = win
+        win.protocol("WM_DELETE_WINDOW", self._close_line_audit_window)
+
+        container = tk.Frame(win, padx=10, pady=10)
+        container.pack(fill='both', expand=True)
+
+        header = tk.Label(container, text="Traverse lines/curves from a start point and list all reachable endpoints.", anchor='w')
+        header.pack(fill='x', pady=(0, 8))
+
+        start_frame = tk.Frame(container)
+        start_frame.pack(fill='x', pady=(0, 6))
+
+        tk.Label(start_frame, text="Start Point ID:").pack(side='left')
+        self._line_audit_start_var = tk.StringVar(value=self._line_audit_last_start or "")
+        combo = ttk.Combobox(start_frame, textvariable=self._line_audit_start_var, width=12, state='normal')
+        combo.pack(side='left', padx=(6, 6))
+        self._line_audit_point_combo = combo
+        self._refresh_line_audit_point_choices()
+
+        tk.Button(start_frame, text="Use Editor Selection", command=self._line_audit_use_selected_point).pack(side='left')
+        tk.Button(start_frame, text="Refresh", command=self._refresh_line_audit_point_choices).pack(side='left', padx=(6, 0))
+
+        button_frame = tk.Frame(container)
+        button_frame.pack(fill='x', pady=(0, 10))
+        tk.Button(button_frame, text="Run Audit", command=self._run_line_audit_from_ui, bg='#4CAF50', fg='white', width=14).pack(side='left')
+        tk.Button(button_frame, text="Clear Highlights", command=self.clear_line_audit_highlights, width=14).pack(side='left', padx=(8, 0))
+
+        results_frame = tk.LabelFrame(container, text="Routes")
+        results_frame.pack(fill='both', expand=True)
+
+        columns = ('endpoint', 'route')
+        tree = ttk.Treeview(results_frame, columns=columns, show='headings', height=12)
+        tree.heading('endpoint', text='Endpoint')
+        tree.heading('route', text='Route')
+        tree.column('endpoint', width=80, anchor='center')
+        tree.column('route', width=440, anchor='w')
+        vsb = ttk.Scrollbar(results_frame, orient='vertical', command=tree.yview)
+        tree.configure(yscrollcommand=vsb.set)
+        tree.pack(side='left', fill='both', expand=True)
+        vsb.pack(side='right', fill='y')
+        self.line_audit_results_tv = tree
+
+        summary = tk.Label(container, text="Run the audit to see reachable endpoints.", anchor='w')
+        summary.pack(fill='x', pady=(8, 0))
+        self._line_audit_summary_label = summary
+
+        info = tk.Label(
+            container,
+            text="Routes are highlighted in bright magenta inside the 3D view until cleared.",
+            anchor='w',
+            fg='#555555'
+        )
+        info.pack(fill='x', pady=(4, 0))
+
+    def _refresh_line_audit_point_choices(self):
+        if not self._line_audit_point_combo:
+            return
+        choices = [
+            str(p.get('id'))
+            for p in sorted(self.user_points, key=lambda entry: entry.get('id', 0))
+            if p.get('id') is not None
+        ]
+        self._line_audit_point_combo['values'] = choices
+        if choices and not (self._line_audit_start_var.get() or "").strip():
+            self._line_audit_start_var.set(choices[0])
+
+    def _line_audit_use_selected_point(self):
+        if not self.points_tv:
+            return
+        selection = self.points_tv.selection()
+        if not selection:
+            messagebox.showinfo("Line Audit", "Select a point in the Editor tab first or enter an ID manually.")
+            return
+        try:
+            pid = int(self.points_tv.item(selection[0], 'values')[0])
+        except Exception:
+            messagebox.showerror("Line Audit", "Could not determine the selected point ID.")
+            return
+        if self._line_audit_start_var:
+            self._line_audit_start_var.set(str(pid))
+
+    def _run_line_audit_from_ui(self):
+        if not self._line_audit_start_var:
+            return
+        raw_value = (self._line_audit_start_var.get() or "").strip()
+        if not raw_value:
+            messagebox.showwarning("Line Audit", "Enter a starting point ID.")
+            return
+        try:
+            start_id = int(raw_value)
+        except ValueError:
+            messagebox.showerror("Line Audit", "Start point ID must be an integer.")
+            return
+
+        try:
+            result = self.perform_line_audit(start_id)
+        except ValueError as exc:
+            messagebox.showerror("Line Audit", str(exc))
+            return
+
+        self._line_audit_last_start = str(start_id)
+        self._populate_line_audit_results(result)
+
+        self._line_audit_highlights = {
+            'lines': set(result.get('highlight_lines', set())),
+            'curves': set(result.get('highlight_curves', set())),
+            'endpoints': set(result.get('unique_endpoints', []))
+        }
+        try:
+            self.update_3d_plot()
+        except Exception:
+            pass
+
+        routes_count = len(result.get('routes', []))
+        endpoints_count = len(result.get('unique_endpoints', []))
+        self.update_status(f"Line audit found {endpoints_count} endpoint(s) across {routes_count} route(s).")
+
+    def _populate_line_audit_results(self, result):
+        tree = self.line_audit_results_tv
+        if not tree:
+            return
+        for child in tree.get_children():
+            tree.delete(child)
+
+        start_id = result.get('start_point')
+        routes = result.get('routes', [])
+        for idx, route in enumerate(routes, start=1):
+            endpoint = route.get('end_point')
+            desc = self._format_line_audit_route(start_id, route.get('path', []))
+            tree.insert('', 'end', iid=f"route_{idx}", values=(endpoint, desc))
+
+        if self._line_audit_summary_label:
+            routes_count = len(routes)
+            endpoints_count = len(result.get('unique_endpoints', []))
+            self._line_audit_summary_label.config(
+                text=f"{routes_count} route(s), {endpoints_count} unique endpoint(s)"
+            )
+
+    def _format_line_audit_route(self, start_point_id, path):
+        if not path:
+            return f"Point {start_point_id} (no outgoing connections)"
+        parts = [f"Point {start_point_id}"]
+        current = start_point_id
+        for edge in path:
+            label = "Line" if edge.get('type') == 'line' else 'Curve'
+            edge_id = edge.get('id', '?')
+            target = edge.get('target')
+            parts.append(f"{label} {edge_id} -> Point {target}")
+            current = target
+        return " -> ".join(parts)
+
+    def _build_line_curve_adjacency(self, valid_point_ids=None):
+        adjacency = {}
+        for line in self.lines:
+            if line.get('hidden', False):
+                continue
+            start_id = line.get('start_id')
+            end_id = line.get('end_id')
+            if start_id is None or end_id is None:
+                continue
+            if valid_point_ids is not None and (start_id not in valid_point_ids or end_id not in valid_point_ids):
+                continue
+            edge = {'type': 'line', 'id': line.get('id'), 'target': end_id, 'source': start_id}
+            adjacency.setdefault(start_id, []).append(edge)
+
+        for curve in self.curves:
+            if curve.get('hidden', False):
+                continue
+            start_id = curve.get('start_id')
+            end_id = curve.get('end_id')
+            if start_id is None or end_id is None:
+                continue
+            if valid_point_ids is not None and (start_id not in valid_point_ids or end_id not in valid_point_ids):
+                continue
+            edge = {'type': 'curve', 'id': curve.get('id'), 'target': end_id, 'source': start_id}
+            adjacency.setdefault(start_id, []).append(edge)
+
+        for edges in adjacency.values():
+            edges.sort(key=lambda e: (e.get('type'), e.get('id') or 0, e.get('target') or 0))
+        return adjacency
+
+    def perform_line_audit(self, start_point_id):
+        if not self.user_points:
+            raise ValueError("No points available to audit.")
+
+        try:
+            start_point_id = int(start_point_id)
+        except (TypeError, ValueError):
+            raise ValueError("Start point ID must be an integer.")
+
+        valid_point_ids = {
+            p.get('id') for p in self.user_points if p.get('id') is not None
+        }
+        if start_point_id not in valid_point_ids:
+            raise ValueError(f"Point {start_point_id} does not exist.")
+
+        adjacency = self._build_line_curve_adjacency(valid_point_ids)
+
+        routes = []
+
+        def dfs(current_point, path, visited):
+            neighbors = adjacency.get(current_point, [])
+            advanced = False
+            for edge in neighbors:
+                target = edge.get('target')
+                if target is None or target in visited:
+                    continue
+                advanced = True
+                path.append(edge)
+                visited.add(target)
+                dfs(target, path, visited)
+                visited.remove(target)
+                path.pop()
+            if not advanced:
+                routes.append({'end_point': current_point, 'path': list(path)})
+
+        dfs(start_point_id, [], {start_point_id})
+
+        highlight_lines = set()
+        highlight_curves = set()
+        unique_endpoints = set()
+        for route in routes:
+            unique_endpoints.add(route.get('end_point'))
+            for edge in route.get('path', []):
+                if edge.get('type') == 'line' and edge.get('id') is not None:
+                    highlight_lines.add(edge['id'])
+                elif edge.get('type') == 'curve' and edge.get('id') is not None:
+                    highlight_curves.add(edge['id'])
+
+        return {
+            'start_point': start_point_id,
+            'routes': routes,
+            'unique_endpoints': sorted(unique_endpoints),
+            'highlight_lines': highlight_lines,
+            'highlight_curves': highlight_curves
+        }
+
+    def clear_line_audit_highlights(self):
+        self._line_audit_highlights = {'lines': set(), 'curves': set(), 'endpoints': set()}
+        try:
+            self.update_3d_plot()
+        except Exception:
+            pass
+        self.update_status("Line audit highlights cleared.")
+
+    def _close_line_audit_window(self):
+        try:
+            if self._line_audit_window:
+                self._line_audit_window.destroy()
+        finally:
+            self._line_audit_window = None
+            self._line_audit_point_combo = None
+            self.line_audit_results_tv = None
+            self._line_audit_summary_label = None
+            self.clear_line_audit_highlights()
 
 
     def hide_all_elements(self):
