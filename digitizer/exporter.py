@@ -72,8 +72,14 @@ def export_project(project: Dict[str, Any], export_dir: str, project_name: str):
         for p in points:
             rx = int(round(float(p.get('real_x', 0.0))))
             ry = int(round(float(p.get('real_y', 0.0))))
-            z = p.get('z', '')
-            f.write(f"INSERT INTO SeasPathDB.dbo.Visualization_Coordinate (Id, X, Y, Z, Description) VALUES ({p['id']}, {rx}, {ry}, '{z}', '{p.get('description','')}');\n")
+            # Ensure Z is exported as integer where possible
+            raw_z = p.get('z', 0)
+            try:
+                z_val = int(round(float(raw_z)))
+            except Exception:
+                z_val = 0
+            # Swap Y and Z axes on export: export Y<-Z and Z<-Y
+            f.write(f"INSERT INTO SeasPathDB.dbo.Visualization_Coordinate (Id, X, Y, Z, Description) VALUES ({p['id']}, {rx}, {z_val}, {ry}, '{p.get('description','')}');\n")
         f.write("SET IDENTITY_INSERT SeasPathDB.dbo.Visualization_Coordinate OFF;\n\n")
 
         # Lines

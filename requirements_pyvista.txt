@@ -1,0 +1,7 @@
+# PyVista 3D visualization dependencies
+# Install with: pip install -r requirements_pyvista.txt
+
+pyvista>=0.43.0
+pyvistaqt>=0.11.0
+PyQt5>=5.15.0
+vtk>=9.2.0

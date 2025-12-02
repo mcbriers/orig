@@ -77,6 +77,14 @@ class PointsLinesMixin:
 
         if len(self.current_line_points) == 2:
             start_id, end_id = self.current_line_points
+            
+            # Validate: prevent zero-length lines (same start and end point)
+            if start_id == end_id:
+                self.update_status("⚠️ Cannot create line: start and end points are the same!")
+                self.canvas.delete("temp_line_point")
+                self.current_line_points.clear()
+                return
+            
             start_point = next(p for p in self.user_points if p['id'] == start_id)
             end_point = next(p for p in self.user_points if p['id'] == end_id)
             x1 = start_point['pdf_x'] * self.zoom_level

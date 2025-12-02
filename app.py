@@ -15,6 +15,7 @@ from points_lines import PointsLinesMixin
 from curves import CurvesMixin
 from deletion import DeletionMixin
 from utils import UtilsMixin
+from pyvista_view import PyVistaViewMixin
 
 # digitizer helpers (migration, id allocation, schema validation)
 try:
@@ -27,7 +28,7 @@ except Exception:
     validate_project = None
 
 
-class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixin, UtilsMixin):
+class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixin, UtilsMixin, PyVistaViewMixin):
     def __init__(self, root):
         # This class composes behavior via mixins and uses an external root window.
         # Do not subclass tk.Tk directly when a root is provided.
@@ -248,7 +249,13 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         
         # 3D view tab (matplotlib) - created lazily
         self.view3d_frame = tk.Frame(self.notebook)
-        self.notebook.add(self.view3d_frame, text="3D View")
+        self.notebook.add(self.view3d_frame, text="3D View (Matplotlib)")
+        
+        # PyVista 3D view tab
+        try:
+            self._init_pyvista_tab()
+        except Exception as e:
+            print(f"Failed to initialize PyVista tab: {e}")
 
         self.canvas.bind("<MouseWheel>", self.on_mousewheel)
         self.canvas.bind("<Button-4>", self.on_mousewheel)
@@ -983,14 +990,20 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                 try:
                     pid = p['id']
                     refs = 0
+                    # Count line references (skip hidden lines)
                     for l in self.lines:
-                        if l.get('start_id') == pid or l.get('end_id') == pid:
-                            refs += 1
+                        if not l.get('hidden', False):
+                            if l.get('start_id') == pid or l.get('end_id') == pid:
+                                refs += 1
+                    # Count curve references (skip hidden curves)
                     for c in self.curves:
-                        if pid in c.get('arc_point_ids', []):
-                            refs += 1
-                        if c.get('start_id') == pid or c.get('end_id') == pid:
-                            refs += 1
+                        if not c.get('hidden', False):
+                            # Count arc point reference
+                            if pid in c.get('arc_point_ids', []):
+                                refs += 1
+                            # Only count start/end if NOT already in arc_point_ids (avoid double-counting)
+                            elif c.get('start_id') == pid or c.get('end_id') == pid:
+                                refs += 1
                 except Exception:
                     refs = 0
                 description = p.get('description', '3D Visualisation')
@@ -1711,6 +1724,102 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
             except Exception:
                 pass
 
+    def show_point_references(self):
+        """Show all lines and curves that reference the selected point."""
+        try:
+            sel = self.points_tv.selection()
+            if not sel:
+                messagebox.showwarning('No Selection', 'Select a point to show its references.')
+                return
+            if len(sel) > 1:
+                messagebox.showwarning('Multiple Selection', 'Select only one point to show references.')
+                return
+            
+            src_iid = sel[0]
+            try:
+                src_id = int(self.points_tv.item(src_iid, 'values')[0])
+            except Exception:
+                messagebox.showerror('Invalid Selection', 'Could not determine selected point id.')
+                return
+            
+            # Find point details
+            point = next((p for p in self.user_points if p['id'] == src_id), None)
+            if not point:
+                messagebox.showerror('Error', f'Point {src_id} not found.')
+                return
+            
+            # Find all references
+            line_refs = [(l, 'start' if l.get('start_id') == src_id else 'end') 
+                         for l in self.lines 
+                         if l.get('start_id') == src_id or l.get('end_id') == src_id]
+            
+            curve_refs = []
+            for c in self.curves:
+                roles = []
+                if c.get('start_id') == src_id:
+                    roles.append('start')
+                if c.get('end_id') == src_id:
+                    roles.append('end')
+                if src_id in c.get('arc_point_ids', []):
+                    roles.append('arc')
+                if roles:
+                    curve_refs.append((c, roles))
+            
+            # Build report
+            from tkinter import Toplevel, Text, Scrollbar
+            
+            dlg = Toplevel(self.master)
+            dlg.title(f'References for Point {src_id}')
+            dlg.geometry('600x400')
+            
+            text = Text(dlg, wrap='word', font=('Courier', 10))
+            scroll = Scrollbar(dlg, command=text.yview)
+            text.configure(yscrollcommand=scroll.set)
+            scroll.pack(side='right', fill='y')
+            text.pack(side='left', fill='both', expand=True)
+            
+            # Point info
+            text.insert('end', f'Point ID: {src_id}\n')
+            text.insert('end', f'Location: ({point.get("real_x")}, {point.get("real_y")}, {point.get("z")})\n')
+            text.insert('end', f'Hidden: {point.get("hidden", False)}\n')
+            text.insert('end', '\n' + '='*60 + '\n\n')
+            
+            # Line references
+            text.insert('end', f'LINE REFERENCES ({len(line_refs)}): \n\n')
+            if line_refs:
+                for line, role in line_refs:
+                    hidden = ' [HIDDEN]' if line.get('hidden', False) else ''
+                    other_id = line.get('end_id') if role == 'start' else line.get('start_id')
+                    text.insert('end', f'  Line {line["id"]}{hidden}: {role} point (other: {other_id})\n')
+            else:
+                text.insert('end', '  (none)\n')
+            
+            text.insert('end', '\n')
+            
+            # Curve references
+            text.insert('end', f'CURVE REFERENCES ({len(curve_refs)}): \n\n')
+            if curve_refs:
+                for curve, roles in curve_refs:
+                    hidden = ' [HIDDEN]' if curve.get('hidden', False) else ''
+                    roles_str = ', '.join(roles)
+                    arc_ids = curve.get('arc_point_ids', [])
+                    text.insert('end', f'  Curve {curve["id"]}{hidden}: {roles_str}\n')
+                    if 'arc' in roles:
+                        idx = arc_ids.index(src_id) if src_id in arc_ids else -1
+                        text.insert('end', f'    Arc position: {idx+1} of {len(arc_ids)}\n')
+            else:
+                text.insert('end', '  (none)\n')
+            
+            text.insert('end', '\n' + '='*60 + '\n')
+            text.insert('end', f'Total visible references: {len([l for l, _ in line_refs if not l.get("hidden", False)]) + len([c for c, _ in curve_refs if not c.get("hidden", False)])}\n')
+            
+            text.configure(state='disabled')
+            
+        except Exception as e:
+            messagebox.showerror('Error', f'Failed to show references: {e}')
+            import traceback
+            traceback.print_exc()
+    
     def editor_reassign_references(self):
         # Reassign references from a selected source point to a target point chosen by the user
         try:
@@ -2410,6 +2519,9 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                     all_z.append(pz)
             except Exception:
                 pass
+        
+        # Also update PyVista plot if initialized
+        self.update_pyvista_plot()
 
         # Overlay highlighted endpoints (if any)
         if highlight_endpoints:
@@ -2570,6 +2682,20 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
                         self._3d_canvas.draw()
                     except Exception:
                         pass
+        except Exception:
+            pass
+        
+        # Also update PyVista view if available
+        try:
+            if hasattr(self, 'update_pyvista_plot'):
+                self.update_pyvista_plot()
+        except Exception as e:
+            pass
+        
+        # Also update PyVista view if available
+        try:
+            if hasattr(self, 'update_pyvista_plot'):
+                self.update_pyvista_plot()
         except Exception:
             pass
     def increase_point_size(self):
@@ -4459,6 +4585,12 @@ class PDFViewerApp(CalibrationMixin, PointsLinesMixin, CurvesMixin, DeletionMixi
         else:
             report = "\n\n".join(issues)
             messagebox.showwarning("Project Audit", f"Found the following issues:\n\n{report}")
+        
+        # Refresh editor to update refs column
+        try:
+            self.refresh_editor_lists()
+        except Exception:
+            pass
 
     def open_line_audit_tool(self):
         if not self.user_points:
