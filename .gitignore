@@ -39,3 +39,24 @@ ENV/
 temp/
 tmp/
 test_output/
+
+# Build / distribution artifacts
+dist/
+build/
+*.exe
+*.pkg
+*.pyz
+*.whl
+*.egg
+
+# Packaging / installer output
+*.bat
+*.msi
+
+# Large docs / layout
+layout.pdf
+
+# Git LFS candidates (large binaries) - consider migrating these to LFS
+# dist/3DMaker-Digitizer.exe
+# build/3DMaker-Digitizer/3DMaker-Digitizer.pkg
+# build/3DMaker-Digitizer/PYZ-00.pyz
