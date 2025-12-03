@@ -5,6 +5,10 @@ Separates business logic from UI concerns.
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 import numpy as np
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from digitizer.calibration import PDFDocument
 
 
 @dataclass
@@ -135,11 +139,18 @@ class ProjectData:
         self.curves: List[Curve] = []
         # Transponder/RFID records (list of dicts)
         self.transponders: List[Dict[str, Any]] = []
+        
+        # Multi-PDF support
+        self.pdfs: List[PDFDocument] = []
+        self.active_pdf_index: int = 0  # Index into pdfs list
+        
+        # Legacy single-PDF calibration (deprecated, for backward compatibility)
         self.reference_points_pdf: List[tuple] = []  # [(x,y), ...]
         self.reference_points_real: List[tuple] = []  # [(x,y), ...]
         self.transformation_matrix: Optional[np.ndarray] = None
+        
         self.deletion_log: List[Dict[str, Any]] = []
-        self.pdf_path: Optional[str] = None
+        self.pdf_path: Optional[str] = None  # Legacy single PDF path
         self.project_path: Optional[str] = None
         self.modified: bool = False
         
@@ -184,6 +195,52 @@ class ProjectData:
         """Find curve by ID."""
         return next((c for c in self.curves if c.id == curve_id), None)
     
+    # ---- Multi-PDF Management Methods ----
+    
+    def add_pdf(self, pdf_doc: PDFDocument):
+        """Add a PDF document to the project."""
+        self.pdfs.append(pdf_doc)
+        self.modified = True
+    
+    def remove_pdf(self, index: int):
+        """Remove a PDF document by index."""
+        if 0 <= index < len(self.pdfs):
+            self.pdfs.pop(index)
+            # Adjust active index if needed
+            if self.active_pdf_index >= len(self.pdfs) and len(self.pdfs) > 0:
+                self.active_pdf_index = len(self.pdfs) - 1
+            elif len(self.pdfs) == 0:
+                self.active_pdf_index = 0
+            self.modified = True
+    
+    def get_active_pdf(self) -> Optional[PDFDocument]:
+        """Get the currently active PDF document."""
+        if 0 <= self.active_pdf_index < len(self.pdfs):
+            return self.pdfs[self.active_pdf_index]
+        return None
+    
+    def set_active_pdf(self, index: int):
+        """Set the active PDF by index."""
+        if 0 <= index < len(self.pdfs):
+            self.active_pdf_index = index
+            self.modified = True
+    
+    def reorder_pdf(self, old_index: int, new_index: int):
+        """Move a PDF from old_index to new_index."""
+        if 0 <= old_index < len(self.pdfs) and 0 <= new_index < len(self.pdfs):
+            pdf_doc = self.pdfs.pop(old_index)
+            self.pdfs.insert(new_index, pdf_doc)
+            # Update active index if needed
+            if self.active_pdf_index == old_index:
+                self.active_pdf_index = new_index
+            elif old_index < self.active_pdf_index <= new_index:
+                self.active_pdf_index -= 1
+            elif new_index <= self.active_pdf_index < old_index:
+                self.active_pdf_index += 1
+            self.modified = True
+    
+    # ---- Reference Counting ----
+    
     def count_point_references(self, point_id: int) -> int:
         """Count how many lines/curves reference this point."""
         count = 0
@@ -210,12 +267,22 @@ class ProjectData:
             'lines': [l.to_dict() for l in self.lines],
             'curves': [c.to_dict() for c in self.curves],
             'transponders': self.transponders,
-            'reference_points_pdf': self.reference_points_pdf,
-            'reference_points_real': self.reference_points_real,
             'deletion_log': self.deletion_log
         }
+        
+        # Multi-PDF support
+        if self.pdfs:
+            result['pdfs'] = [pdf.to_dict() for pdf in self.pdfs]
+            result['active_pdf_index'] = self.active_pdf_index
+        
+        # Legacy calibration data (for backward compatibility)
+        if self.reference_points_pdf:
+            result['reference_points_pdf'] = self.reference_points_pdf
+        if self.reference_points_real:
+            result['reference_points_real'] = self.reference_points_real
         if self.transformation_matrix is not None:
             result['transformation_matrix'] = self.transformation_matrix.tolist()
+        
         return result
     
     def from_dict(self, data: Dict[str, Any]):
@@ -227,7 +294,19 @@ class ProjectData:
         self.lines = [Line.from_dict(l) for l in data.get('lines', [])]
         self.curves = [Curve.from_dict(c) for c in data.get('curves', [])]
         
-        # Handle both old and new calibration point formats
+        # Multi-PDF support
+        if 'pdfs' in data:
+            # Get project directory for loading calibration files
+            project_dir = os.path.dirname(self.project_path) if self.project_path else ""
+            self.pdfs = [PDFDocument.from_dict(pdf_data, project_dir) for pdf_data in data['pdfs']]
+            self.active_pdf_index = data.get('active_pdf_index', 0)
+        else:
+            # Backward compatibility: migrate legacy single-PDF calibration to multi-PDF
+            self.pdfs = []
+            self.active_pdf_index = 0
+            # If there's legacy calibration data, we'll create a PDFDocument later when we know the PDF path
+        
+        # Load legacy calibration data (for backward compatibility and migration)
         self.reference_points_pdf = data.get('reference_points_pdf') or data.get('calibration_pdf_points', [])
         self.reference_points_real = data.get('reference_points_real') or data.get('calibration_real_points', [])
         
@@ -280,6 +359,8 @@ class ProjectData:
         self.points.clear()
         self.lines.clear()
         self.curves.clear()
+        self.pdfs.clear()
+        self.active_pdf_index = 0
         self.reference_points_pdf.clear()
         self.reference_points_real.clear()
         self.transformation_matrix = None

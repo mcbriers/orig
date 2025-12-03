@@ -32,6 +32,12 @@ class Viewer3D(QWidget):
     curve_delete_requested = pyqtSignal(int)  # curve_id
     curve_reverse_requested = pyqtSignal(int)  # curve_id
     
+    # Bulk operation signals
+    lines_duplicate_requested = pyqtSignal(list)  # list of line_ids
+    lines_delete_requested = pyqtSignal(list)  # list of line_ids
+    curves_duplicate_requested = pyqtSignal(list)  # list of curve_ids
+    curves_delete_requested = pyqtSignal(list)  # list of curve_ids
+    
     line_create_requested = pyqtSignal(int, int)  # start_point_id, end_point_id
     # Request to add/assign an RFID to a line (line_id)
     line_add_rfid_requested = pyqtSignal(int)
@@ -53,6 +59,10 @@ class Viewer3D(QWidget):
         self.highlighted_points = set()
         self.highlighted_lines = set()
         self.highlighted_curves = set()
+        
+        # Selected items (for multi-selection with Shift-click)
+        self.selected_lines = set()
+        self.selected_curves = set()
         
         # Track if camera has been initialized
         self._camera_initialized = False
@@ -518,6 +528,14 @@ class Viewer3D(QWidget):
         # Determine if this point is highlighted
         is_highlighted = point.id in self.highlighted_points
         
+        # Check if this point is an arc point of any selected curve
+        is_arc_of_selected_curve = False
+        for curve_id in self.selected_curves:
+            curve = self.project.get_curve(curve_id)
+            if curve and point.id in curve.arc_point_ids:
+                is_arc_of_selected_curve = True
+                break
+        
         # Create sphere for point with centered coordinates and scaled Z
         sphere = vtk.vtkSphereSource()
         sphere.SetCenter(
@@ -525,8 +543,8 @@ class Viewer3D(QWidget):
             -(point.real_y - self.center_y),
             point.z * self.z_scale
         )
-        # Use larger radius for highlighted points
-        sphere.SetRadius(self.point_radius * 1.5 if is_highlighted else self.point_radius)
+        # Use larger radius for highlighted or selected curve arc points
+        sphere.SetRadius(self.point_radius * 1.5 if (is_highlighted or is_arc_of_selected_curve) else self.point_radius)
         sphere.SetThetaResolution(16)
         sphere.SetPhiResolution(16)
         
@@ -535,8 +553,10 @@ class Viewer3D(QWidget):
         
         actor = vtk.vtkActor()
         actor.SetMapper(mapper)
-        # Use orange for highlighted, normal color otherwise
-        if is_highlighted:
+        # Priority: bright purple for arc points of selected curves, orange for highlighted, normal color otherwise
+        if is_arc_of_selected_curve:
+            color = (200 / 255.0, 0 / 255.0, 255 / 255.0)  # Bright purple
+        elif is_highlighted:
             color = (255 / 255.0, 165 / 255.0, 0 / 255.0)  # Orange
         else:
             color = (self.point_color[0] / 255.0,
@@ -548,8 +568,18 @@ class Viewer3D(QWidget):
     
     def _create_line_actor(self, start_point, end_point, line_id=None):
         """Create a VTK actor for a line with an arrowhead showing direction."""
-        # Determine if this line is highlighted
+        # Determine if this line is highlighted or selected
         is_highlighted = line_id and line_id in self.highlighted_lines
+        is_selected = line_id and line_id in self.selected_lines
+        
+        # Check if this line is a base line for a selected curve
+        is_base_of_selected_curve = False
+        if line_id:
+            for curve_id in self.selected_curves:
+                curve = self.project.get_curve(curve_id)
+                if curve and hasattr(curve, 'base_line_id') and curve.base_line_id == line_id:
+                    is_base_of_selected_curve = True
+                    break
         
         # Transform coordinates
         p1 = (start_point.real_x - self.center_x,
@@ -567,8 +597,8 @@ class Viewer3D(QWidget):
         # Create tube for better visibility
         tube = vtk.vtkTubeFilter()
         tube.SetInputConnection(line.GetOutputPort())
-        # Use thicker tube for highlighted lines
-        tube.SetRadius(self.line_radius * 1.5 if is_highlighted else self.line_radius)
+        # Use thicker tube for highlighted/selected lines or base lines of selected curves
+        tube.SetRadius(self.line_radius * 1.5 if (is_highlighted or is_selected or is_base_of_selected_curve) else self.line_radius)
         tube.SetNumberOfSides(12)
         
         mapper = vtk.vtkPolyDataMapper()
@@ -576,9 +606,11 @@ class Viewer3D(QWidget):
         
         actor = vtk.vtkActor()
         actor.SetMapper(mapper)
-        # Use orange for highlighted, green otherwise
-        if is_highlighted:
-            color = (255 / 255.0, 165 / 255.0, 0 / 255.0)  # Orange
+        # Use orange for selected (priority), base line of selected curve, or highlighted
+        if is_selected or is_base_of_selected_curve:
+            color = (255 / 255.0, 165 / 255.0, 0 / 255.0)  # Orange for selected
+        elif is_highlighted:
+            color = (255 / 255.0, 165 / 255.0, 0 / 255.0)  # Orange for highlighted
         else:
             color = (self.line_color[0] / 255.0,
                      self.line_color[1] / 255.0,
@@ -625,6 +657,9 @@ class Viewer3D(QWidget):
     
     def _create_curve_actor(self, curve):
         """Create a VTK actor for a curve (polyline through arc points)."""
+        # Determine if this curve is selected
+        is_selected = curve.id in self.selected_curves
+        
         # Create points with centered coordinates and scaled Z
         points = vtk.vtkPoints()
         for x, y, z in curve.arc_points_real:
@@ -660,12 +695,16 @@ class Viewer3D(QWidget):
         
         actor = vtk.vtkActor()
         actor.SetMapper(mapper)
-        # Convert RGB 0-255 to 0-1 for VTK
-        actor.GetProperty().SetColor(
-            self.curve_color[0] / 255.0,
-            self.curve_color[1] / 255.0,
-            self.curve_color[2] / 255.0
-        )
+        # Use orange for selected, normal color otherwise
+        if is_selected:
+            actor.GetProperty().SetColor(255 / 255.0, 165 / 255.0, 0 / 255.0)  # Orange
+        else:
+            # Convert RGB 0-255 to 0-1 for VTK
+            actor.GetProperty().SetColor(
+                self.curve_color[0] / 255.0,
+                self.curve_color[1] / 255.0,
+                self.curve_color[2] / 255.0
+            )
         
         return actor
     
@@ -796,6 +835,9 @@ class Viewer3D(QWidget):
         if not picked_actor:
             return
         
+        # Check if Shift key is pressed
+        shift_pressed = self.interactor.GetShiftKey()
+        
         # Determine what was clicked
         point_id = self.actor_to_point_id.get(picked_actor)
         line_id = self.actor_to_line_id.get(picked_actor)
@@ -806,6 +848,48 @@ class Viewer3D(QWidget):
         if transponder_id is not None:
             self._show_rfid_context_menu(transponder_id)
             return
+        
+        # Check if picked line is a base line for any curve - treat as curve selection
+        curve_for_base_line = None
+        if line_id is not None:
+            for c in self.project.curves:
+                if hasattr(c, 'base_line_id') and c.base_line_id == line_id and not c.hidden:
+                    curve_for_base_line = c
+                    break
+        
+        # If line is a curve base line, treat the click as a curve selection
+        if curve_for_base_line:
+            curve_id = curve_for_base_line.id
+            line_id = None  # Don't treat as line anymore
+        
+        # Handle multi-selection for lines and curves (mixed selection allowed)
+        if line_id is not None:
+            if shift_pressed:
+                # Toggle selection
+                if line_id in self.selected_lines:
+                    self.selected_lines.discard(line_id)
+                else:
+                    self.selected_lines.add(line_id)
+                self.update_view()  # Refresh to show selection
+                return
+            else:
+                # If there are any selections, add current line to selection for bulk operation
+                if self.selected_lines or self.selected_curves:
+                    self.selected_lines.add(line_id)
+        
+        if curve_id is not None:
+            if shift_pressed:
+                # Toggle selection
+                if curve_id in self.selected_curves:
+                    self.selected_curves.discard(curve_id)
+                else:
+                    self.selected_curves.add(curve_id)
+                self.update_view()  # Refresh to show selection
+                return
+            else:
+                # If there are any selections, add current curve to selection for bulk operation
+                if self.selected_lines or self.selected_curves:
+                    self.selected_curves.add(curve_id)
         
         # Check if picked point/line belongs to curve(s)
         curves_for_point = []
@@ -915,26 +999,42 @@ class Viewer3D(QWidget):
     
     def _show_line_context_menu(self, line_id: int):
         """Show context menu for a line."""
-        menu = QMenu(f"Line {line_id}")
+        # Check if we have multiple selections (lines and/or curves)
+        has_selection = len(self.selected_lines) > 0 or len(self.selected_curves) > 0
         
-        identify_action = menu.addAction("Properties")
-        identify_action.triggered.connect(lambda: self.line_identify_requested.emit(line_id))
+        if has_selection:
+            total = len(self.selected_lines) + len(self.selected_curves)
+            menu = QMenu(f"Selection ({total} items)")
+        else:
+            menu = QMenu(f"Line {line_id}")
         
-        trace_action = menu.addAction("Line Trace")
-        trace_action.triggered.connect(lambda: self.line_trace_requested.emit(line_id))
+        if not has_selection:
+            identify_action = menu.addAction("Properties")
+            identify_action.triggered.connect(lambda: self.line_identify_requested.emit(line_id))
+            
+            trace_action = menu.addAction("Line Trace")
+            trace_action.triggered.connect(lambda: self.line_trace_requested.emit(line_id))
+            
+            menu.addSeparator()
+            
+            reverse_action = menu.addAction("Reverse Direction")
+            reverse_action.triggered.connect(lambda: self.line_reverse_requested.emit(line_id))
+            
+            menu.addSeparator()
         
-        menu.addSeparator()
-        
-        reverse_action = menu.addAction("Reverse Direction")
-        reverse_action.triggered.connect(lambda: self.line_reverse_requested.emit(line_id))
-        
-        menu.addSeparator()
-        
-        duplicate_action = menu.addAction("Duplicate")
-        duplicate_action.triggered.connect(lambda: self.line_duplicate_requested.emit(line_id))
-        
-        delete_action = menu.addAction("Delete")
-        delete_action.triggered.connect(lambda: self.line_delete_requested.emit(line_id))
+        if has_selection:
+            total = len(self.selected_lines) + len(self.selected_curves)
+            duplicate_action = menu.addAction(f"Duplicate {total} Items")
+            duplicate_action.triggered.connect(lambda: self._bulk_duplicate_mixed())
+            
+            delete_action = menu.addAction(f"Delete {total} Items")
+            delete_action.triggered.connect(lambda: self._bulk_delete_mixed())
+        else:
+            duplicate_action = menu.addAction("Duplicate")
+            duplicate_action.triggered.connect(lambda: self.line_duplicate_requested.emit(line_id))
+            
+            delete_action = menu.addAction("Delete")
+            delete_action.triggered.connect(lambda: self.line_delete_requested.emit(line_id))
         
         # Add RFID assignment action
         menu.addSeparator()
@@ -1024,21 +1124,37 @@ class Viewer3D(QWidget):
     
     def _show_curve_context_menu(self, curve_id: int):
         """Show context menu for a curve."""
-        menu = QMenu(f"Curve {curve_id}")
+        # Check if we have multiple selections (lines and/or curves)
+        has_selection = len(self.selected_lines) > 0 or len(self.selected_curves) > 0
         
-        identify_action = menu.addAction("Properties")
-        identify_action.triggered.connect(lambda: self.curve_identify_requested.emit(curve_id))
+        if has_selection:
+            total = len(self.selected_lines) + len(self.selected_curves)
+            menu = QMenu(f"Selection ({total} items)")
+        else:
+            menu = QMenu(f"Curve {curve_id}")
         
-        menu.addSeparator()
+        if not has_selection:
+            identify_action = menu.addAction("Properties")
+            identify_action.triggered.connect(lambda: self.curve_identify_requested.emit(curve_id))
+            
+            menu.addSeparator()
         
-        duplicate_action = menu.addAction("Duplicate")
-        duplicate_action.triggered.connect(lambda: self.curve_duplicate_requested.emit(curve_id))
-        
-        reverse_action = menu.addAction("Reverse Direction")
-        reverse_action.triggered.connect(lambda: self.curve_reverse_requested.emit(curve_id))
-        
-        delete_action = menu.addAction("Delete")
-        delete_action.triggered.connect(lambda: self.curve_delete_requested.emit(curve_id))
+        if has_selection:
+            total = len(self.selected_lines) + len(self.selected_curves)
+            duplicate_action = menu.addAction(f"Duplicate {total} Items")
+            duplicate_action.triggered.connect(lambda: self._bulk_duplicate_mixed())
+            
+            delete_action = menu.addAction(f"Delete {total} Items")
+            delete_action.triggered.connect(lambda: self._bulk_delete_mixed())
+        else:
+            duplicate_action = menu.addAction("Duplicate")
+            duplicate_action.triggered.connect(lambda: self.curve_duplicate_requested.emit(curve_id))
+            
+            reverse_action = menu.addAction("Reverse Direction")
+            reverse_action.triggered.connect(lambda: self.curve_reverse_requested.emit(curve_id))
+            
+            delete_action = menu.addAction("Delete")
+            delete_action.triggered.connect(lambda: self.curve_delete_requested.emit(curve_id))
         
         menu.addSeparator()
         
@@ -1192,6 +1308,54 @@ class Viewer3D(QWidget):
         # Simulate button release to VTK to prevent stuck state
         self.interactor.InvokeEvent("RightButtonReleaseEvent")
 
+    def _bulk_duplicate_lines(self):
+        """Emit signal to duplicate all selected lines."""
+        if self.selected_lines:
+            self.lines_duplicate_requested.emit(list(self.selected_lines))
+            self.selected_lines.clear()
+            self.update_view()
+    
+    def _bulk_delete_lines(self):
+        """Emit signal to delete all selected lines."""
+        if self.selected_lines:
+            self.lines_delete_requested.emit(list(self.selected_lines))
+            self.selected_lines.clear()
+            self.update_view()
+    
+    def _bulk_duplicate_curves(self):
+        """Emit signal to duplicate all selected curves."""
+        if self.selected_curves:
+            self.curves_duplicate_requested.emit(list(self.selected_curves))
+            self.selected_curves.clear()
+            self.update_view()
+    
+    def _bulk_delete_curves(self):
+        """Emit signal to delete all selected curves."""
+        if self.selected_curves:
+            self.curves_delete_requested.emit(list(self.selected_curves))
+            self.selected_curves.clear()
+            self.update_view()
+    
+    def _bulk_duplicate_mixed(self):
+        """Emit signals to duplicate all selected lines and curves."""
+        if self.selected_lines:
+            self.lines_duplicate_requested.emit(list(self.selected_lines))
+        if self.selected_curves:
+            self.curves_duplicate_requested.emit(list(self.selected_curves))
+        self.selected_lines.clear()
+        self.selected_curves.clear()
+        self.update_view()
+    
+    def _bulk_delete_mixed(self):
+        """Emit signals to delete all selected lines and curves."""
+        if self.selected_lines:
+            self.lines_delete_requested.emit(list(self.selected_lines))
+        if self.selected_curves:
+            self.curves_delete_requested.emit(list(self.selected_curves))
+        self.selected_lines.clear()
+        self.selected_curves.clear()
+        self.update_view()
+    
     def eventFilter(self, obj, event):
         """Intercept mouse events on the VTK widget to support modifier+left-click actions.
 

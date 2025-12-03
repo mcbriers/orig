@@ -199,9 +199,26 @@ class Operations:
         if arc_point_ids_override is not None:
             num_interior_points = max(len(arc_point_ids_override), 1)
 
-        arc_points_real = arc_points_real_override or self._calculate_arc_points(
-            start_pt, arc_pt, end_pt, num_interior_points
-        )
+        # If arc_points_real is provided explicitly, use it
+        if arc_points_real_override is not None:
+            arc_points_real = arc_points_real_override
+        # If arc_point_ids are provided, build arc_points_real from those actual points
+        elif arc_point_ids_override is not None:
+            arc_points_real = [
+                (int(round(start_pt.real_x)), int(round(start_pt.real_y)), int(round(start_pt.z)))
+            ]
+            for pid in arc_point_ids_override:
+                p = self.project.get_point(pid)
+                if p:
+                    arc_points_real.append((int(round(p.real_x)), int(round(p.real_y)), int(round(p.z))))
+            arc_points_real.append(
+                (int(round(end_pt.real_x)), int(round(end_pt.real_y)), int(round(end_pt.z)))
+            )
+        # Otherwise, calculate arc points from geometry
+        else:
+            arc_points_real = self._calculate_arc_points(
+                start_pt, arc_pt, end_pt, num_interior_points
+            )
 
         if not arc_points_real or len(arc_points_real) < 3:
             return None

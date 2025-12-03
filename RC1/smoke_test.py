@@ -14,6 +14,7 @@ from qt_app.operations import Operations
 from qt_app.geometry import GeometryEngine
 from qt_app.import_export import ImportExport
 from digitizer.schema import is_point, is_line, is_curve, validate_project
+from digitizer.calibration import Calibration, PDFDocument
 
 # Test counters
 tests_passed = 0
@@ -426,6 +427,127 @@ with tempfile.TemporaryDirectory() as tmpdir:
          len(restored_project.reference_points_pdf) == 2)
     test("Integration: roundtrip preserves curves", 
          len(restored_project.curves) >= 1)
+
+# ==================== MULTI-PDF TESTS ====================
+print("\n[9] Multi-PDF Tests")
+
+# Test PDFDocument creation
+pdf1 = test_exception("PDFDocument creation", 
+                      PDFDocument, "track1.pdf", None, "Track 1", 0)
+
+# Test Calibration creation
+cal1 = test_exception("Calibration creation", 
+                      Calibration, "track1.pdf")
+
+# Test calibration setup
+if cal1:
+    cal1.reference_points_pdf = [(0, 0), (100, 100)]
+    cal1.reference_points_real = [(0, 0), (100, 100)]
+    cal1._calculate_transformation()
+    test("Calibration has transformation", cal1.is_valid())
+
+# Test coordinate transformation
+if cal1 and cal1.is_valid():
+    x_real, y_real = cal1.pdf_to_real(50, 50)
+    test("pdf_to_real() transforms correctly", abs(x_real - 50) < 0.1 and abs(y_real - 50) < 0.1)
+    
+    x_pdf, y_pdf = cal1.real_to_pdf(50, 50)
+    test("real_to_pdf() transforms correctly", abs(x_pdf - 50) < 0.1 and abs(y_pdf - 50) < 0.1)
+
+# Test calibration serialization
+if cal1:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cal_path = Path(tmpdir) / "test.cal"
+        cal1.save(str(cal_path))
+        test("Calibration save creates file", cal_path.exists())
+        
+        cal2 = Calibration.load(str(cal_path))
+        test("Calibration load restores data", 
+             len(cal2.reference_points_pdf) == 2 and cal2.is_valid())
+
+# Test ProjectData multi-PDF operations
+mp_project = ProjectData()
+
+# Create test PDFs
+cal_a = Calibration("drawing_a.pdf")
+cal_a.reference_points_pdf = [(0, 0), (100, 100)]
+cal_a.reference_points_real = [(0, 0), (50, 50)]
+cal_a._calculate_transformation()
+
+cal_b = Calibration("drawing_b.pdf")
+cal_b.reference_points_pdf = [(0, 0), (200, 200)]
+cal_b.reference_points_real = [(0, 0), (100, 100)]
+cal_b._calculate_transformation()
+
+pdf_a = PDFDocument("drawing_a.pdf", cal_a, "Drawing A", 0)
+pdf_b = PDFDocument("drawing_b.pdf", cal_b, "Drawing B", 1)
+
+# Test add_pdf
+mp_project.add_pdf(pdf_a)
+test("add_pdf() adds to list", len(mp_project.pdfs) == 1)
+test("add_pdf() sets modified flag", mp_project.modified)
+
+mp_project.add_pdf(pdf_b)
+test("add_pdf() handles multiple PDFs", len(mp_project.pdfs) == 2)
+
+# Test get_active_pdf
+active = mp_project.get_active_pdf()
+test("get_active_pdf() returns PDF", active is not None)
+test("get_active_pdf() returns first by default", 
+     active.filename == "drawing_a.pdf" if active else False)
+
+# Test set_active_pdf
+mp_project.set_active_pdf(1)
+test("set_active_pdf() changes active index", mp_project.active_pdf_index == 1)
+active = mp_project.get_active_pdf()
+test("set_active_pdf() changes active PDF", 
+     active.filename == "drawing_b.pdf" if active else False)
+
+# Test reorder_pdf
+mp_project.reorder_pdf(0, 1)
+test("reorder_pdf() changes order", mp_project.pdfs[0].filename == "drawing_b.pdf")
+test("reorder_pdf() updates active index", mp_project.active_pdf_index == 0)
+
+# Test remove_pdf
+mp_project.remove_pdf(1)
+test("remove_pdf() removes from list", len(mp_project.pdfs) == 1)
+test("remove_pdf() adjusts active index", mp_project.active_pdf_index == 0)
+
+# Test multi-PDF serialization
+mp_project2 = ProjectData()
+mp_project2.add_pdf(pdf_a)
+mp_project2.add_pdf(pdf_b)
+
+data = mp_project2.to_dict()
+test("to_dict() includes pdfs field", 'pdfs' in data)
+test("to_dict() includes active_pdf_index", 'active_pdf_index' in data)
+test("to_dict() serializes PDFs", len(data['pdfs']) == 2)
+
+# Test multi-PDF deserialization
+mp_project3 = ProjectData()
+mp_project3.project_path = "c:\\temp\\test.dig"
+mp_project3.from_dict(data)
+test("from_dict() restores PDFs", len(mp_project3.pdfs) == 2)
+test("from_dict() restores active index", mp_project3.active_pdf_index == 0)
+test("from_dict() restores PDF filenames", 
+     mp_project3.pdfs[0].filename == "drawing_a.pdf")
+
+# Test backward compatibility with old projects
+old_data = {
+    'user_points': [],
+    'lines': [],
+    'curves': [],
+    'transponders': [],
+    'reference_points_pdf': [(0, 0), (100, 100)],
+    'reference_points_real': [(0, 0), (50, 50)],
+    'deletion_log': []
+}
+
+compat_project = ProjectData()
+compat_project.from_dict(old_data)
+test("Backward compatibility: old projects load", len(compat_project.pdfs) == 0)
+test("Backward compatibility: legacy calibration preserved", 
+     len(compat_project.reference_points_pdf) == 2)
 
 # ==================== FINAL SUMMARY ====================
 print("\n" + "=" * 70)

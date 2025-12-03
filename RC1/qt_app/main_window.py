@@ -150,6 +150,11 @@ class MainWindow(QMainWindow):
         self.viewer_3d.curve_delete_requested.connect(self._delete_curve)
         self.viewer_3d.curve_reverse_requested.connect(self._reverse_curve)
         self.viewer_3d.line_create_requested.connect(self._create_line_from_3d)
+        # Connect bulk operation signals
+        self.viewer_3d.lines_duplicate_requested.connect(self._duplicate_lines)
+        self.viewer_3d.lines_delete_requested.connect(self._delete_lines)
+        self.viewer_3d.curves_duplicate_requested.connect(self._duplicate_curves)
+        self.viewer_3d.curves_delete_requested.connect(self._delete_curves)
         # Connect RFID assignment from 3D view (line context menu)
         try:
             self.viewer_3d.line_add_rfid_requested.connect(self._assign_rfid_to_line)
@@ -2247,6 +2252,72 @@ class MainWindow(QMainWindow):
         self._refresh_all_views()
         self.update_status(f"Deleted {deleted_count} line(s)")
     
+    def _duplicate_lines(self, line_ids: list):
+        """Duplicate multiple lines at new Z level(s)."""
+        if not line_ids:
+            return
+        
+        # Get the first line to show its Z level
+        first_line = self.project.get_line(line_ids[0])
+        if not first_line:
+            return
+        
+        start_point = self.project.get_point(first_line.start_id)
+        if not start_point:
+            return
+        
+        # Ask for Z levels
+        from PyQt6.QtWidgets import QInputDialog
+        z_input, ok = QInputDialog.getText(
+            self, "Duplicate Lines",
+            f"Enter Z level(s) for {len(line_ids)} new line(s) (comma-separated)\n"
+            f"Original lines at Z: {start_point.z}",
+            text=self.last_z_levels
+        )
+        
+        if not ok or not z_input.strip():
+            return
+        
+        # Remember for next time
+        self.last_z_levels = z_input.strip()
+        
+        # Parse Z levels
+        try:
+            z_levels = [float(z.strip()) for z in z_input.split(',')]
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Input", "Please enter valid numbers separated by commas.")
+            return
+        
+        # Duplicate each line at each Z level
+        total_created = 0
+        for line_id in line_ids:
+            line = self.project.get_line(line_id)
+            if not line:
+                continue
+            
+            # Check if this is a curve base line - skip if so
+            curves_using_line = [c for c in self.project.curves if hasattr(c, 'base_line_id') and c.base_line_id == line_id]
+            if curves_using_line:
+                continue
+            
+            for new_z in z_levels:
+                new_start_id = self._find_or_create_point_at_z(line.start_id, new_z)
+                new_end_id = self._find_or_create_point_at_z(line.end_id, new_z)
+                
+                if new_start_id and new_end_id:
+                    new_line = self.operations.create_line(new_start_id, new_end_id)
+                    if new_line:
+                        new_line.description = f"{line.description} (Z={new_z})" if line.description else f"Z={new_z}"
+                        new_line.hidden = line.hidden
+                        total_created += 1
+        
+        if total_created > 0:
+            self._refresh_pdf_markers()
+            self._refresh_all_views()
+            self.update_status(f"Created {total_created} line(s) at Z levels: {', '.join(map(str, z_levels))}")
+        else:
+            QMessageBox.warning(self, "Duplicate Failed", "Failed to create duplicate lines.")
+    
     def _delete_curves(self, curve_ids: list):
         """Delete multiple curves."""
         # Delete multiple curves without confirmation
@@ -2264,13 +2335,115 @@ class MainWindow(QMainWindow):
                     self.operations.delete_line(base_line_id)
                 
                 # Delete curve
-                success, _ = self.operations.delete_curve(curve_id, remove_orphans=True)
+                success = self.operations.delete_curve(curve_id)
                 if success:
                     deleted_count += 1
         
         self._refresh_pdf_markers()
         self._refresh_all_views()
         self.update_status(f"Deleted {deleted_count} curve(s)")
+    
+    def _duplicate_curves(self, curve_ids: list):
+        """Duplicate multiple curves at new Z level(s)."""
+        if not curve_ids:
+            return
+        
+        # Get the first curve to show its Z level
+        first_curve = self.project.get_curve(curve_ids[0])
+        if not first_curve:
+            return
+        
+        start_point = self.project.get_point(first_curve.start_id)
+        if not start_point:
+            return
+        
+        # Ask for Z levels
+        from PyQt6.QtWidgets import QInputDialog
+        z_input, ok = QInputDialog.getText(
+            self, "Duplicate Curves",
+            f"Enter Z level(s) for {len(curve_ids)} new curve(s) (comma-separated)\n"
+            f"Original curves at Z: {start_point.z}",
+            text=self.last_z_levels
+        )
+        
+        if not ok or not z_input.strip():
+            return
+        
+        # Remember for next time
+        self.last_z_levels = z_input.strip()
+        
+        # Parse Z levels
+        try:
+            z_levels = [float(z.strip()) for z in z_input.split(',')]
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Input", "Please enter valid numbers separated by commas.")
+            return
+        
+        # Duplicate each curve at each Z level
+        total_created = 0
+        for curve_id in curve_ids:
+            curve = self.project.get_curve(curve_id)
+            if not curve:
+                continue
+            
+            # Capture base line metadata if present
+            base_line = None
+            if curve.base_line_id:
+                base_line = self.project.get_line(curve.base_line_id)
+            
+            for new_z in z_levels:
+                # Find or create all points at new Z level
+                new_start_id = self._find_or_create_point_at_z(curve.start_id, new_z)
+                new_end_id = self._find_or_create_point_at_z(curve.end_id, new_z)
+                
+                # Find or create arc points at new Z level
+                new_arc_ids = []
+                for arc_id in curve.arc_point_ids:
+                    new_arc_id = self._find_or_create_point_at_z(arc_id, new_z)
+                    if new_arc_id:
+                        new_arc_ids.append(new_arc_id)
+                
+                if not new_start_id or not new_end_id or not new_arc_ids:
+                    continue
+                
+                # Create the curve using duplicated points
+                num_interior = max(len(curve.arc_points_real) - 2, len(new_arc_ids))
+                center_id = new_arc_ids[0]
+                new_curve = self.operations.create_curve(
+                    new_start_id,
+                    new_end_id,
+                    center_id,
+                    num_interior_points=num_interior,
+                    arc_point_ids_override=new_arc_ids
+                )
+
+                if new_curve:
+                    new_curve.description = f"{curve.description} (Z={new_z})" if curve.description else f"Z={new_z}"
+                    new_curve.hidden = curve.hidden
+
+                    if new_curve.base_line_id:
+                        new_base_line = self.project.get_line(new_curve.base_line_id)
+                        if new_base_line:
+                            if base_line and base_line.description:
+                                new_base_line.description = f"{base_line.description} (Z={new_z})"
+                            else:
+                                new_base_line.description = f"Z={new_z}"
+                            if base_line:
+                                new_base_line.hidden = base_line.hidden
+
+                    for pid in new_curve.arc_point_ids:
+                        arc_point = self.project.get_point(pid)
+                        if arc_point:
+                            arc_point.description = f"Curve {new_curve.id} arc sample"
+
+                    total_created += 1
+        
+        if total_created > 0:
+            self._refresh_pdf_markers()
+            self._refresh_all_views()
+            self.update_status(f"Created {total_created} curve(s) at Z levels: {', '.join(map(str, z_levels))}")
+        else:
+            QMessageBox.warning(self, "Duplicate Failed", "Failed to create duplicate curves.")
     
     def _create_line_from_3d(self, start_id: int, end_id: int):
         """Create a line between two points from 3D view."""
